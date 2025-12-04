@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronRight, ExternalLink } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
 import { BeliefInput } from "@/components/BeliefInput";
 import { TradeCard } from "@/components/TradeCard";
 import { AlternativeCard } from "@/components/AlternativeCard";
 import { PositionCard } from "@/components/PositionCard";
-import { parseBeliefToResponse, fastPlaySuggestion } from "@/lib/mock-data";
+import { ThemeCard } from "@/components/ThemeCard";
+import { parseBeliefToResponse, fastPlaySuggestion, themeExplanations } from "@/lib/mock-data";
 import { TradeSuggestion, AlternativeTrade, LivePosition, ParsedIntent, ViewState } from "@/lib/types";
 
 export default function Home() {
@@ -20,6 +21,8 @@ export default function Home() {
   const [alternatives, setAlternatives] = useState<AlternativeTrade[]>([]);
   const [activePosition, setActivePosition] = useState<LivePosition | null>(null);
   const [selectedTrade, setSelectedTrade] = useState<TradeSuggestion | null>(null);
+  const [isThematic, setIsThematic] = useState(false);
+  const [themeInfo, setThemeInfo] = useState<typeof themeExplanations.peptides | null>(null);
 
   const handleBeliefSubmit = async (text: string) => {
     setBelief(text);
@@ -34,6 +37,8 @@ export default function Home() {
     setBestTrade(response.best);
     setAlternatives(response.alternatives);
     setSelectedTrade(response.best);
+    setIsThematic(response.isThematic || false);
+    setThemeInfo(response.themeInfo || null);
     setIsLoading(false);
   };
 
@@ -54,6 +59,8 @@ export default function Home() {
     setBestTrade(fastPlaySuggestion);
     setAlternatives([]);
     setSelectedTrade(fastPlaySuggestion);
+    setIsThematic(false);
+    setThemeInfo(null);
     setIsLoading(false);
   };
 
@@ -88,6 +95,8 @@ export default function Home() {
     setParsedIntent(null);
     setBestTrade(null);
     setAlternatives([]);
+    setIsThematic(false);
+    setThemeInfo(null);
   };
 
   const handleRoll = () => {
@@ -103,6 +112,8 @@ export default function Home() {
     setAlternatives([]);
     setActivePosition(null);
     setSelectedTrade(null);
+    setIsThematic(false);
+    setThemeInfo(null);
   };
 
   const handleSelectAlternative = (trade: AlternativeTrade) => {
@@ -143,12 +154,13 @@ export default function Home() {
               />
 
               {/* Example prompts */}
-              <div className="flex flex-wrap justify-center gap-2 mt-8 max-w-[600px]">
+              <div className="flex flex-wrap justify-center gap-2 mt-8 max-w-[700px]">
                 {[
-                  "I think SOL will pump tomorrow",
+                  "How can I long peptides?",
+                  "I think AI infrastructure will boom",
+                  "Nuclear energy is the future",
                   "MSTR is going to moon",
-                  "ETH looks weak here",
-                  "BTC to 100k this week",
+                  "SOL will pump tomorrow",
                 ].map((prompt) => (
                   <button
                     key={prompt}
@@ -171,8 +183,13 @@ export default function Home() {
               className="max-w-[900px] mx-auto px-6 py-8"
             >
               {/* Query display */}
-              <div className="mb-8">
-                <h2 className="text-2xl font-medium text-white mb-4">{belief}</h2>
+              <div className="mb-6">
+                <h2 className="text-2xl font-medium text-white">{belief}</h2>
+                {parsedIntent && (
+                  <p className="text-sm text-[#6b6c6d] mt-1">
+                    Parsed as: {parsedIntent.summary} · {Math.round(parsedIntent.confidence * 100)}% confidence
+                  </p>
+                )}
               </div>
 
               {isLoading ? (
@@ -182,6 +199,11 @@ export default function Home() {
                 </div>
               ) : (
                 <>
+                  {/* Theme Card - show if thematic */}
+                  {isThematic && themeInfo && bestTrade && (
+                    <ThemeCard theme={themeInfo} selectedTicker={bestTrade.ticker} />
+                  )}
+
                   {/* Main trade card */}
                   {bestTrade && (
                     <TradeCard
@@ -202,19 +224,27 @@ export default function Home() {
                   {/* Sources */}
                   <div className="mt-8 mb-4">
                     <button className="flex items-center gap-1 text-sm text-[#6b6c6d] hover:text-[#9a9b9c]">
-                      Reviewed 12 sources
+                      Reviewed {isThematic ? "18" : "12"} sources
                       <ChevronRight className="w-4 h-4" />
                     </button>
                   </div>
 
                   {/* AI Analysis */}
-                  {parsedIntent && (
+                  {parsedIntent && bestTrade && (
                     <div className="prose prose-invert max-w-none">
                       <p className="text-[#e8e8e8] leading-relaxed">
-                        <strong>{bestTrade?.name} ({bestTrade?.ticker})</strong> absolutely{" "}
-                        <em>can</em> have a significant move from here, but whether it
-                        plays out depends on broader market conditions and your risk
-                        tolerance.{" "}
+                        {isThematic ? (
+                          <>
+                            Based on your interest in <strong>{themeInfo?.themeName}</strong>, we recommend{" "}
+                            <strong>{bestTrade.name} ({bestTrade.ticker})</strong> as the best expression.{" "}
+                            {bestTrade.explanation}{" "}
+                          </>
+                        ) : (
+                          <>
+                            <strong>{bestTrade.name} ({bestTrade.ticker})</strong> is positioned to capture your thesis.{" "}
+                            {bestTrade.explanation}{" "}
+                          </>
+                        )}
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#242526] text-xs text-[#9a9b9c]">
                           analysis
                         </span>
