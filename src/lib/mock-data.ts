@@ -1,0 +1,336 @@
+import { TradeSuggestion, AlternativeTrade, ParsedIntent } from "./types";
+
+export const mockBeliefResponses: Record<string, {
+  intent: ParsedIntent;
+  best: TradeSuggestion;
+  alternatives: AlternativeTrade[];
+}> = {
+  default: {
+    intent: {
+      assets: ["SOL"],
+      direction: "long",
+      timeframeHours: 24,
+      confidence: 0.85,
+      summary: "Bullish on SOL short-term",
+    },
+    best: {
+      id: "sol-long-24h",
+      label: "SOL Long (24h Window)",
+      ticker: "SOL",
+      name: "Solana",
+      venue: "Hyperliquid",
+      direction: "long",
+      leverage: 2,
+      sizeUsd: 100,
+      timeframeHours: 24,
+      stopLossPct: -8,
+      takeProfitPct: 15,
+      riskLevel: "moderate",
+      explanation: "Based on your belief that SOL will pump, a 2x leveraged long position captures upside while limiting downside risk. 24h window aligns with your short-term thesis.",
+      currentPrice: 224.67,
+      priceChange24h: 8.43,
+      priceChangePct24h: 3.89,
+      stats: {
+        prevClose: 216.24,
+        open: 218.50,
+        dayRange: "$215.32 - $228.91",
+        weekRange52: "$18.21 - $264.63",
+        volume: "2.4B",
+        marketCap: "$108.2B",
+      },
+      payoffPreview: {
+        maxGainUsd: 30,
+        maxLossUsd: 16,
+        maxGainPct: 30,
+        maxLossPct: -16,
+      },
+    },
+    alternatives: [
+      {
+        id: "sol-long-safe",
+        label: "SOL Long (No Leverage)",
+        ticker: "SOL",
+        name: "Solana",
+        venue: "Hyperliquid",
+        direction: "long",
+        leverage: 1,
+        sizeUsd: 100,
+        timeframeHours: 48,
+        stopLossPct: -5,
+        takeProfitPct: 10,
+        riskLevel: "safe",
+        explanation: "Lower risk spot-equivalent position with tighter stops.",
+        currentPrice: 224.67,
+        priceChange24h: 8.43,
+        priceChangePct24h: 3.89,
+        stats: {
+          prevClose: 216.24,
+          open: 218.50,
+          dayRange: "$215.32 - $228.91",
+          weekRange52: "$18.21 - $264.63",
+          volume: "2.4B",
+          marketCap: "$108.2B",
+        },
+        payoffPreview: {
+          maxGainUsd: 10,
+          maxLossUsd: 5,
+          maxGainPct: 10,
+          maxLossPct: -5,
+        },
+        variant: "safer",
+      },
+      {
+        id: "sol-long-degen",
+        label: "SOL Long (5x Leverage)",
+        ticker: "SOL",
+        name: "Solana",
+        venue: "Drift",
+        direction: "long",
+        leverage: 5,
+        sizeUsd: 100,
+        timeframeHours: 12,
+        stopLossPct: -15,
+        takeProfitPct: 40,
+        riskLevel: "aggressive",
+        explanation: "High conviction play with 5x leverage. Higher risk, higher reward.",
+        currentPrice: 224.67,
+        priceChange24h: 8.43,
+        priceChangePct24h: 3.89,
+        stats: {
+          prevClose: 216.24,
+          open: 218.50,
+          dayRange: "$215.32 - $228.91",
+          weekRange52: "$18.21 - $264.63",
+          volume: "2.4B",
+          marketCap: "$108.2B",
+        },
+        payoffPreview: {
+          maxGainUsd: 200,
+          maxLossUsd: 75,
+          maxGainPct: 200,
+          maxLossPct: -75,
+        },
+        variant: "riskier",
+      },
+    ],
+  },
+  mstr: {
+    intent: {
+      assets: ["MSTR"],
+      direction: "long",
+      timeframeHours: 168,
+      confidence: 0.72,
+      summary: "Bullish on MSTR / Bitcoin proxy",
+    },
+    best: {
+      id: "mstr-long-1w",
+      label: "MSTR Long (1 Week Window)",
+      ticker: "MSTR",
+      name: "MicroStrategy",
+      venue: "Hyperliquid",
+      direction: "long",
+      leverage: 1.5,
+      sizeUsd: 100,
+      timeframeHours: 168,
+      stopLossPct: -12,
+      takeProfitPct: 25,
+      riskLevel: "moderate",
+      explanation: "MSTR is highly correlated with BTC. A moderate leverage position lets you ride the Bitcoin wave with equity exposure. Wider stops for volatility.",
+      currentPrice: 188.39,
+      priceChange24h: 7.06,
+      priceChangePct24h: 3.89,
+      stats: {
+        prevClose: 181.33,
+        open: 183.26,
+        dayRange: "$178.64 - $190.44",
+        weekRange52: "$155.61 - $457.22",
+        volume: "26M",
+        marketCap: "$54.11B",
+        peRatio: 7.74,
+        eps: 24.35,
+      },
+      payoffPreview: {
+        maxGainUsd: 37.5,
+        maxLossUsd: 18,
+        maxGainPct: 37.5,
+        maxLossPct: -18,
+      },
+    },
+    alternatives: [
+      {
+        id: "mstr-long-safe",
+        label: "MSTR Spot (No Leverage)",
+        ticker: "MSTR",
+        name: "MicroStrategy",
+        venue: "Hyperliquid",
+        direction: "long",
+        leverage: 1,
+        sizeUsd: 100,
+        timeframeHours: 336,
+        stopLossPct: -8,
+        takeProfitPct: 20,
+        riskLevel: "safe",
+        explanation: "Simple spot-equivalent long with 2-week horizon.",
+        currentPrice: 188.39,
+        priceChange24h: 7.06,
+        priceChangePct24h: 3.89,
+        stats: {
+          prevClose: 181.33,
+          open: 183.26,
+          dayRange: "$178.64 - $190.44",
+          weekRange52: "$155.61 - $457.22",
+          volume: "26M",
+          marketCap: "$54.11B",
+          peRatio: 7.74,
+          eps: 24.35,
+        },
+        payoffPreview: {
+          maxGainUsd: 20,
+          maxLossUsd: 8,
+          maxGainPct: 20,
+          maxLossPct: -8,
+        },
+        variant: "safer",
+      },
+    ],
+  },
+  btc: {
+    intent: {
+      assets: ["BTC"],
+      direction: "long",
+      timeframeHours: 72,
+      confidence: 0.78,
+      summary: "Bullish on Bitcoin mid-term",
+    },
+    best: {
+      id: "btc-long-3d",
+      label: "BTC Long (3 Day Window)",
+      ticker: "BTC",
+      name: "Bitcoin",
+      venue: "Hyperliquid",
+      direction: "long",
+      leverage: 2,
+      sizeUsd: 100,
+      timeframeHours: 72,
+      stopLossPct: -6,
+      takeProfitPct: 12,
+      riskLevel: "moderate",
+      explanation: "Bitcoin looking strong. 2x leverage with a 3-day window captures the expected move while managing volatility risk.",
+      currentPrice: 96842.50,
+      priceChange24h: 2341.20,
+      priceChangePct24h: 2.48,
+      stats: {
+        prevClose: 94501.30,
+        open: 95120.00,
+        dayRange: "$94,200 - $97,850",
+        weekRange52: "$38,500 - $99,800",
+        volume: "32.1B",
+        marketCap: "$1.92T",
+      },
+      payoffPreview: {
+        maxGainUsd: 24,
+        maxLossUsd: 12,
+        maxGainPct: 24,
+        maxLossPct: -12,
+      },
+    },
+    alternatives: [],
+  },
+  eth: {
+    intent: {
+      assets: ["ETH"],
+      direction: "short",
+      timeframeHours: 24,
+      confidence: 0.65,
+      summary: "Bearish on ETH short-term",
+    },
+    best: {
+      id: "eth-short-24h",
+      label: "ETH Short (24h Window)",
+      ticker: "ETH",
+      name: "Ethereum",
+      venue: "Hyperliquid",
+      direction: "short",
+      leverage: 2,
+      sizeUsd: 100,
+      timeframeHours: 24,
+      stopLossPct: -10,
+      takeProfitPct: 15,
+      riskLevel: "moderate",
+      explanation: "You're bearish on ETH. A 2x short position lets you profit from downside with defined risk.",
+      currentPrice: 3642.18,
+      priceChange24h: -87.42,
+      priceChangePct24h: -2.34,
+      stats: {
+        prevClose: 3729.60,
+        open: 3698.20,
+        dayRange: "$3,580 - $3,720",
+        weekRange52: "$2,120 - $4,090",
+        volume: "18.4B",
+        marketCap: "$438B",
+      },
+      payoffPreview: {
+        maxGainUsd: 30,
+        maxLossUsd: 20,
+        maxGainPct: 30,
+        maxLossPct: -20,
+      },
+    },
+    alternatives: [],
+  },
+};
+
+export function parseBeliefToResponse(belief: string): {
+  intent: ParsedIntent;
+  best: TradeSuggestion;
+  alternatives: AlternativeTrade[];
+} {
+  const lowerBelief = belief.toLowerCase();
+  
+  // Check for specific tickers
+  if (lowerBelief.includes("mstr") || lowerBelief.includes("microstrategy")) {
+    return mockBeliefResponses.mstr;
+  }
+  if (lowerBelief.includes("btc") || lowerBelief.includes("bitcoin")) {
+    return mockBeliefResponses.btc;
+  }
+  if (lowerBelief.includes("eth") || lowerBelief.includes("ethereum")) {
+    return mockBeliefResponses.eth;
+  }
+  
+  // Default to SOL
+  return mockBeliefResponses.default;
+}
+
+export const fastPlaySuggestion: TradeSuggestion = {
+  id: "fast-sol-momentum",
+  label: "SOL Momentum Play (2h)",
+  ticker: "SOL",
+  name: "Solana",
+  venue: "Hyperliquid",
+  direction: "long",
+  leverage: 3,
+  sizeUsd: 50,
+  timeframeHours: 2,
+  stopLossPct: -5,
+  takeProfitPct: 8,
+  riskLevel: "aggressive",
+  explanation: "Highest momentum setup right now. SOL showing strong buying pressure with volume confirmation. Quick 2-hour window to capture the move.",
+  currentPrice: 224.67,
+  priceChange24h: 8.43,
+  priceChangePct24h: 3.89,
+  stats: {
+    prevClose: 216.24,
+    open: 218.50,
+    dayRange: "$215.32 - $228.91",
+    weekRange52: "$18.21 - $264.63",
+    volume: "2.4B",
+    marketCap: "$108.2B",
+  },
+  payoffPreview: {
+    maxGainUsd: 12,
+    maxLossUsd: 7.5,
+    maxGainPct: 24,
+    maxLossPct: -15,
+  },
+};
