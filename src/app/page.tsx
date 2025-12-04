@@ -29,10 +29,31 @@ import {
 } from "@/lib/events-data";
 import { Position, PairPosition, ParsedCommand, PortfolioSummary } from "@/lib/types";
 
+function TutorialCommand({ 
+  command, 
+  description, 
+  onClick 
+}: { 
+  command: string; 
+  description: string; 
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center justify-between p-3 bg-[#1e1f20] hover:bg-[#2d2e2f] rounded-lg transition-colors group text-left"
+    >
+      <code className="text-[#20b2aa] font-mono text-sm">{command}</code>
+      <span className="text-sm text-[#6b6c6d] group-hover:text-[#9a9b9c] transition-colors">{description}</span>
+    </button>
+  );
+}
+
 export default function Home() {
-  const [positions, setPositions] = useState<Position[]>(initialPositions);
-  const [pairPositions, setPairPositions] = useState<PairPosition[]>(initialPairPositions);
-  const [eventPositions, setEventPositions] = useState<EventPosition[]>(initialEventPositions);
+  // Start empty to show tutorial on first load
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [pairPositions, setPairPositions] = useState<PairPosition[]>([]);
+  const [eventPositions, setEventPositions] = useState<EventPosition[]>([]);
   const [summary, setSummary] = useState<PortfolioSummary>(() => 
     calculatePortfolioSummary(initialPositions, initialPairPositions)
   );
@@ -355,18 +376,172 @@ export default function Home() {
               </div>
 
               {totalPositions === 0 ? (
-                <div className="flex flex-col items-center justify-center py-20 text-center">
-                  <div className="w-16 h-16 rounded-2xl bg-[#242526] flex items-center justify-center mb-4">
-                    <Command className="w-8 h-8 text-[#6b6c6d]" />
+                <div className="space-y-8">
+                  {/* Hero */}
+                  <div className="text-center py-8">
+                    <h1 className="text-3xl font-semibold text-[#e8e8e8] mb-3">
+                      Express any belief. We&apos;ll route it.
+                    </h1>
+                    <p className="text-[#9a9b9c] text-lg max-w-xl mx-auto">
+                      Type what you believe in natural language. We find the best way to express it across crypto, sports, and prediction markets.
+                    </p>
+                    <button
+                      onClick={() => setCommandBarOpen(true)}
+                      className="mt-6 inline-flex items-center gap-2 px-5 py-3 bg-[#20b2aa] hover:bg-[#2cc5bc] text-white rounded-xl font-medium transition-colors"
+                    >
+                      <Command className="w-5 h-5" />
+                      Try it — press ⌘K
+                    </button>
                   </div>
-                  <h3 className="text-lg font-medium text-[#e8e8e8] mb-2">Express your first belief</h3>
-                  <p className="text-[#6b6c6d] mb-4 max-w-md">
-                    Type any belief — crypto, sports, events — and we&apos;ll find the best way to express it.
-                  </p>
-                  <div className="flex flex-wrap justify-center gap-2 text-sm">
-                    <code className="px-2 py-1 bg-[#242526] rounded text-[#9a9b9c]">sol long 10k 2x</code>
-                    <code className="px-2 py-1 bg-[#242526] rounded text-[#9a9b9c]">lakers win tonight</code>
-                    <code className="px-2 py-1 bg-[#242526] rounded text-[#9a9b9c]">btc 100k by december</code>
+
+                  {/* Tutorial sections */}
+                  <div className="grid gap-6">
+                    {/* Crypto Perps */}
+                    <div className="bg-[#242526] rounded-xl border border-[#2d2e2f] p-5">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-10 h-10 rounded-lg bg-[#20b2aa]/20 flex items-center justify-center">
+                          <span className="text-lg">📈</span>
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-[#e8e8e8]">Crypto Perpetuals</h3>
+                          <p className="text-sm text-[#6b6c6d]">Long or short any crypto with leverage</p>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <TutorialCommand 
+                          command="sol long 10k 2x" 
+                          description="Long SOL with $10k at 2x leverage"
+                          onClick={() => setCommandBarOpen(true)}
+                        />
+                        <TutorialCommand 
+                          command="eth short 5k" 
+                          description="Short ETH with $5k (1x default)"
+                          onClick={() => setCommandBarOpen(true)}
+                        />
+                        <TutorialCommand 
+                          command="btc long 50k 3x" 
+                          description="Long BTC with $50k at 3x leverage"
+                          onClick={() => setCommandBarOpen(true)}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Pair Trades */}
+                    <div className="bg-[#242526] rounded-xl border border-[#2d2e2f] p-5">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-10 h-10 rounded-lg bg-[#d4a853]/20 flex items-center justify-center">
+                          <span className="text-lg">⚖️</span>
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-[#e8e8e8]">Pair Trades</h3>
+                          <p className="text-sm text-[#6b6c6d]">Long one asset, short another — bet on relative performance</p>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <TutorialCommand 
+                          command="sol vs eth 10k" 
+                          description="Long SOL, short ETH with $10k per leg"
+                          onClick={() => setCommandBarOpen(true)}
+                        />
+                        <TutorialCommand 
+                          command="long btc short sol 25k" 
+                          description="Long BTC, short SOL with $25k per leg"
+                          onClick={() => setCommandBarOpen(true)}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Sports & Events */}
+                    <div className="bg-[#242526] rounded-xl border border-[#2d2e2f] p-5">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-10 h-10 rounded-lg bg-orange-500/20 flex items-center justify-center">
+                          <span className="text-lg">🏀</span>
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-[#e8e8e8]">Sports & Events</h3>
+                          <p className="text-sm text-[#6b6c6d]">Bet on sports, politics, and real-world events via Polymarket</p>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <TutorialCommand 
+                          command="lakers win tonight" 
+                          description="Lakers vs Celtics moneyline"
+                          onClick={() => setCommandBarOpen(true)}
+                        />
+                        <TutorialCommand 
+                          command="lebron monster game" 
+                          description="LeBron 30+ points prop"
+                          onClick={() => setCommandBarOpen(true)}
+                        />
+                        <TutorialCommand 
+                          command="chiefs beat bills" 
+                          description="Chiefs vs Bills moneyline"
+                          onClick={() => setCommandBarOpen(true)}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Prediction Markets */}
+                    <div className="bg-[#242526] rounded-xl border border-[#2d2e2f] p-5">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
+                          <span className="text-lg">🔮</span>
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-[#e8e8e8]">Prediction Markets</h3>
+                          <p className="text-sm text-[#6b6c6d]">Price targets, fed rates, elections via Polymarket/Kalshi</p>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <TutorialCommand 
+                          command="btc 100k by december" 
+                          description="Bitcoin above $100k by year end"
+                          onClick={() => setCommandBarOpen(true)}
+                        />
+                        <TutorialCommand 
+                          command="eth 4k" 
+                          description="Ethereum above $4k"
+                          onClick={() => setCommandBarOpen(true)}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Position Management */}
+                    <div className="bg-[#242526] rounded-xl border border-[#2d2e2f] p-5">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-10 h-10 rounded-lg bg-zinc-500/20 flex items-center justify-center">
+                          <span className="text-lg">⚡</span>
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-[#e8e8e8]">Quick Actions</h3>
+                          <p className="text-sm text-[#6b6c6d]">Manage positions fast</p>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <TutorialCommand 
+                          command="close sol" 
+                          description="Close your SOL position"
+                          onClick={() => setCommandBarOpen(true)}
+                        />
+                        <TutorialCommand 
+                          command="flip eth" 
+                          description="Flip ETH (close + reverse direction)"
+                          onClick={() => setCommandBarOpen(true)}
+                        />
+                        <TutorialCommand 
+                          command="close all" 
+                          description="Close all positions"
+                          onClick={() => setCommandBarOpen(true)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Keyboard hint */}
+                  <div className="text-center py-4">
+                    <p className="text-sm text-[#6b6c6d]">
+                      Press <kbd className="px-2 py-1 bg-[#242526] rounded text-[#9a9b9c] font-mono">⌘K</kbd> anywhere to open the command bar
+                    </p>
                   </div>
                 </div>
               ) : (
