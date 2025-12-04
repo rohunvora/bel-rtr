@@ -11,7 +11,7 @@ export interface Position {
   pnlPercent: number;
   liquidationPrice: number;
   openedAt: string;
-  timeframe?: number; // hours
+  timeframe?: number;
 }
 
 export interface PairPosition {
@@ -19,22 +19,22 @@ export interface PairPosition {
   type: "pair";
   longAsset: string;
   shortAsset: string;
-  size: number;
+  longAssetName: string;
+  shortAssetName: string;
+  size: number; // size per leg
   leverage: number;
-  pnl: number;
-  pnlPercent: number;
-  positions: [Position, Position];
+  longEntry: number;
+  shortEntry: number;
+  longCurrent: number;
+  shortCurrent: number;
+  longPnl: number;
+  shortPnl: number;
+  totalPnl: number;
+  totalPnlPercent: number;
+  openedAt: string;
 }
 
-export interface BasketPosition {
-  id: string;
-  type: "basket";
-  name: string;
-  totalSize: number;
-  pnl: number;
-  pnlPercent: number;
-  positions: Position[];
-}
+export type AnyPosition = Position | PairPosition;
 
 export interface Mover {
   asset: string;
@@ -46,12 +46,14 @@ export interface Mover {
 }
 
 export interface ParsedCommand {
-  type: "trade" | "close" | "flip" | "add" | "reduce" | "closeAll" | "unknown";
+  type: "trade" | "pair" | "close" | "flip" | "add" | "reduce" | "closeAll" | "unknown";
   asset?: string;
   direction?: "long" | "short";
   size?: number;
   leverage?: number;
-  timeframe?: string;
+  // For pairs
+  longAsset?: string;
+  shortAsset?: string;
   percent?: number;
   error?: string;
 }
@@ -64,18 +66,5 @@ export interface PortfolioSummary {
   marginUsed: number;
   longExposure: number;
   shortExposure: number;
-}
-
-export interface Trade {
-  id: string;
-  asset: string;
-  direction: "long" | "short";
-  size: number;
-  leverage: number;
-  entryPrice: number;
-  exitPrice?: number;
-  pnl?: number;
-  status: "open" | "closed";
-  openedAt: string;
-  closedAt?: string;
+  positionCount: number;
 }

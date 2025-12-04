@@ -1,61 +1,99 @@
 "use client";
 
-import { LayoutDashboard, History, Settings, BarChart3 } from "lucide-react";
+import { LayoutDashboard, History, Settings, Plus, Bell } from "lucide-react";
 
 interface SidebarProps {
-  activeTab: string;
-  onTabChange: (tab: string) => void;
+  onNewTrade: () => void;
 }
 
-export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
-  const tabs = [
-    { id: "dashboard", icon: LayoutDashboard, label: "Dashboard" },
-    { id: "history", icon: History, label: "History" },
-    { id: "analytics", icon: BarChart3, label: "Analytics" },
-    { id: "settings", icon: Settings, label: "Settings" },
-  ];
-
+export function Sidebar({ onNewTrade }: SidebarProps) {
   return (
-    <aside className="fixed left-0 top-0 h-full w-16 bg-zinc-950 border-r border-zinc-800 flex flex-col items-center py-4 z-40">
+    <aside className="fixed left-0 top-0 h-full w-[68px] bg-[#191a1a] border-r border-[#2d2e2f] flex flex-col items-center py-4 z-40">
       {/* Logo */}
-      <div className="mb-8">
-        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center font-bold text-white text-sm">
-          BR
+      <div className="mb-6">
+        <div className="w-10 h-10 rounded-lg bg-[#242526] flex items-center justify-center">
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            className="text-[#20b2aa]"
+          >
+            <path
+              d="M12 2L2 7L12 12L22 7L12 2Z"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <path
+              d="M2 17L12 22L22 17"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <path
+              d="M2 12L12 17L22 12"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
         </div>
       </div>
 
+      {/* New Trade Button */}
+      <button
+        onClick={onNewTrade}
+        className="w-10 h-10 rounded-lg bg-[#242526] hover:bg-[#2d2e2f] flex items-center justify-center mb-6 transition-colors"
+        title="New Trade (⌘K)"
+      >
+        <Plus className="w-5 h-5 text-[#9a9b9c]" />
+      </button>
+
       {/* Navigation */}
-      <nav className="flex flex-col items-center gap-1 flex-1">
-        {tabs.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => onTabChange(tab.id)}
-              className={`w-11 h-11 rounded-lg flex items-center justify-center transition-all group relative ${
-                isActive 
-                  ? "bg-zinc-800 text-white" 
-                  : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300"
-              }`}
-              title={tab.label}
-            >
-              <Icon className="w-5 h-5" />
-              {/* Tooltip */}
-              <div className="absolute left-full ml-2 px-2 py-1 bg-zinc-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap transition-opacity">
-                {tab.label}
-              </div>
-            </button>
-          );
-        })}
+      <nav className="flex flex-col items-center gap-2 flex-1">
+        <NavItem icon={<LayoutDashboard className="w-5 h-5" />} label="Dashboard" active />
+        <NavItem icon={<History className="w-5 h-5" />} label="History" />
+        <NavItem icon={<Settings className="w-5 h-5" />} label="Settings" />
       </nav>
 
       {/* Bottom */}
-      <div className="mt-auto">
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-xs font-bold text-white">
+      <div className="flex flex-col items-center gap-4 mt-auto">
+        <button className="w-10 h-10 rounded-lg hover:bg-[#242526] flex items-center justify-center transition-colors">
+          <Bell className="w-5 h-5 text-[#6b6c6d]" />
+        </button>
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#20b2aa] to-[#d4a853] flex items-center justify-center text-xs font-medium text-white">
           U
         </div>
       </div>
     </aside>
+  );
+}
+
+function NavItem({
+  icon,
+  label,
+  active = false,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  active?: boolean;
+}) {
+  return (
+    <button
+      className={`relative w-10 h-10 rounded-lg flex flex-col items-center justify-center transition-colors group ${
+        active ? "bg-[#242526] text-white" : "hover:bg-[#242526] text-[#6b6c6d] hover:text-[#9a9b9c]"
+      }`}
+      title={label}
+    >
+      {icon}
+      {/* Tooltip */}
+      <div className="absolute left-full ml-2 px-2 py-1 bg-[#2d2e2f] text-[#e8e8e8] text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50">
+        {label}
+      </div>
+    </button>
   );
 }

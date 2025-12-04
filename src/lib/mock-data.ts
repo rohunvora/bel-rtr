@@ -1,4 +1,4 @@
-import { Position, Mover, PortfolioSummary, ParsedCommand } from "./types";
+import { Position, PairPosition, Mover, PortfolioSummary, ParsedCommand, AnyPosition } from "./types";
 
 export const ASSETS: Record<string, { name: string; price: number }> = {
   BTC: { name: "Bitcoin", price: 97842.50 },
@@ -54,18 +54,26 @@ export const initialPositions: Position[] = [
     liquidationPrice: 4416.00,
     openedAt: new Date(Date.now() - 3600000 * 8).toISOString(),
   },
+];
+
+export const initialPairPositions: PairPosition[] = [
   {
-    id: "pos-3",
-    asset: "WIF",
-    assetName: "dogwifhat",
-    direction: "long",
-    size: 5000,
-    leverage: 3,
-    entryPrice: 2.84,
-    currentPrice: 2.71,
-    pnl: -228.17,
-    pnlPercent: -4.58,
-    liquidationPrice: 1.89,
+    id: "pair-1",
+    type: "pair",
+    longAsset: "SOL",
+    shortAsset: "ETH",
+    longAssetName: "Solana",
+    shortAssetName: "Ethereum",
+    size: 10000,
+    leverage: 2,
+    longEntry: 220.00,
+    shortEntry: 3650.00,
+    longCurrent: 224.67,
+    shortCurrent: 3642.18,
+    longPnl: 424.55,
+    shortPnl: 42.74,
+    totalPnl: 467.29,
+    totalPnlPercent: 2.34,
     openedAt: new Date(Date.now() - 3600000 * 2).toISOString(),
   },
 ];
@@ -80,20 +88,33 @@ export const movers: Mover[] = [
   { asset: "OP", assetName: "Optimism", price: 2.34, change1h: -3.8, change24h: -6.2, volume24h: "$198M" },
 ];
 
-export function calculatePortfolioSummary(positions: Position[]): PortfolioSummary {
-  const totalExposure = positions.reduce((sum, p) => sum + p.size, 0);
-  const netPnl = positions.reduce((sum, p) => sum + p.pnl, 0);
-  const longExposure = positions.filter(p => p.direction === "long").reduce((sum, p) => sum + p.size, 0);
-  const shortExposure = positions.filter(p => p.direction === "short").reduce((sum, p) => sum + p.size, 0);
+export function isPairPosition(pos: AnyPosition): pos is PairPosition {
+  return 'type' in pos && pos.type === 'pair';
+}
+
+export function calculatePortfolioSummary(positions: Position[], pairPositions: PairPosition[]): PortfolioSummary {
+  const posExposure = positions.reduce((sum, p) => sum + p.size, 0);
+  const pairExposure = pairPositions.reduce((sum, p) => sum + p.size * 2, 0); // Both legs
+  const totalExposure = posExposure + pairExposure;
+  
+  const posPnl = positions.reduce((sum, p) => sum + p.pnl, 0);
+  const pairPnl = pairPositions.reduce((sum, p) => sum + p.totalPnl, 0);
+  const netPnl = posPnl + pairPnl;
+  
+  const longExposure = positions.filter(p => p.direction === "long").reduce((sum, p) => sum + p.size, 0)
+    + pairPositions.reduce((sum, p) => sum + p.size, 0); // Long leg of pairs
+  const shortExposure = positions.filter(p => p.direction === "short").reduce((sum, p) => sum + p.size, 0)
+    + pairPositions.reduce((sum, p) => sum + p.size, 0); // Short leg of pairs
   
   return {
     totalValue: 100000 + netPnl,
     totalExposure,
     netPnl,
-    todayPnl: netPnl * 0.6, // Mock: 60% of PnL is from today
+    todayPnl: netPnl * 0.6,
     marginUsed: (totalExposure / 100000) * 100,
     longExposure,
     shortExposure,
+    positionCount: positions.length + pairPositions.length,
   };
 }
 
@@ -106,10 +127,36 @@ export function parseCommand(input: string): ParsedCommand {
     return { type: "closeAll" };
   }
   
+  // Pair trade: "sol vs eth 10k" or "long sol short eth 10k"
+  const vsMatch = normalized.match(/^(\w+)\s+vs\s+(\w+)\s+(\d+)k?\s*(\d+x)?$/);
+  if (vsMatch) {
+    const longAsset = vsMatch[1].toUpperCase();
+    const shortAsset = vsMatch[2].toUpperCase();
+    const size = parseInt(vsMatch[3]) * (normalized.includes('k') ? 1000 : 1000); // Default to k
+    const leverage = vsMatch[4] ? parseInt(vsMatch[4]) : 2;
+    
+    if (ASSETS[longAsset] && ASSETS[shortAsset]) {
+      return { type: "pair", longAsset, shortAsset, size, leverage };
+    }
+  }
+  
+  // Alternative pair syntax: "long sol short eth 10k"
+  const longShortMatch = normalized.match(/^long\s+(\w+)\s+short\s+(\w+)\s+(\d+)k?\s*(\d+x)?$/);
+  if (longShortMatch) {
+    const longAsset = longShortMatch[1].toUpperCase();
+    const shortAsset = longShortMatch[2].toUpperCase();
+    const size = parseInt(longShortMatch[3]) * 1000;
+    const leverage = longShortMatch[4] ? parseInt(longShortMatch[4]) : 2;
+    
+    if (ASSETS[longAsset] && ASSETS[shortAsset]) {
+      return { type: "pair", longAsset, shortAsset, size, leverage };
+    }
+  }
+  
   // Close specific: "close sol"
   if (parts[0] === "close" && parts[1]) {
     const asset = parts[1].toUpperCase();
-    if (ASSETS[asset]) {
+    if (ASSETS[asset] || parts[1] === "pair") {
       return { type: "close", asset };
     }
     return { type: "unknown", error: `Unknown asset: ${parts[1]}` };
@@ -158,13 +205,11 @@ export function parseCommand(input: string): ParsedCommand {
   for (const part of parts) {
     const upper = part.toUpperCase();
     
-    // Check if it's an asset
     if (ASSETS[upper]) {
       asset = upper;
       continue;
     }
     
-    // Check direction
     if (part === "long" || part === "l") {
       direction = "long";
       continue;
@@ -174,14 +219,12 @@ export function parseCommand(input: string): ParsedCommand {
       continue;
     }
     
-    // Check size (10k, 5000, etc)
     const sizeMatch = part.match(/^(\d+)(k)?$/);
     if (sizeMatch) {
       size = parseInt(sizeMatch[1]) * (sizeMatch[2] ? 1000 : 1);
       continue;
     }
     
-    // Check leverage (2x, 3x, etc)
     const levMatch = part.match(/^(\d+)x$/);
     if (levMatch) {
       leverage = parseInt(levMatch[1]);
@@ -199,7 +242,7 @@ export function parseCommand(input: string): ParsedCommand {
     };
   }
   
-  if (parts.length > 0) {
+  if (parts.length > 0 && parts[0] !== "") {
     return { type: "unknown", error: `Could not parse: "${input}"` };
   }
   
@@ -228,4 +271,11 @@ export function formatPnl(pnl: number): string {
 export function formatPercent(pct: number): string {
   const sign = pct >= 0 ? "+" : "";
   return `${sign}${pct.toFixed(2)}%`;
+}
+
+export function formatSize(size: number): string {
+  if (size >= 1000) {
+    return `$${(size / 1000).toFixed(0)}k`;
+  }
+  return `$${size}`;
 }
