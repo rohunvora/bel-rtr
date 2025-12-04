@@ -1,31 +1,13 @@
 @import "tailwindcss";
 
 :root {
-  --background: #191a1a;
-  --background-secondary: #1e1f20;
-  --background-card: #242526;
-  --foreground: #e8e8e8;
-  --foreground-muted: #9a9b9c;
-  --accent: #20b2aa;
-  --accent-hover: #2cc5bc;
-  --accent-gold: #d4a853;
-  --border: #2d2e2f;
-  --success: #22c55e;
-  --danger: #ef4444;
+  --background: #09090b;
+  --foreground: #fafafa;
 }
 
 @theme inline {
   --color-background: var(--background);
-  --color-background-secondary: var(--background-secondary);
-  --color-background-card: var(--background-card);
   --color-foreground: var(--foreground);
-  --color-foreground-muted: var(--foreground-muted);
-  --color-accent: var(--accent);
-  --color-accent-hover: var(--accent-hover);
-  --color-accent-gold: var(--accent-gold);
-  --color-border: var(--border);
-  --color-success: var(--success);
-  --color-danger: var(--danger);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -35,39 +17,55 @@
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: #09090b;
+  color: #fafafa;
   font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
 }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--background);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 4px;
+  background: #27272a;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--foreground-muted);
+  background: #3f3f46;
 }
 
-/* Input focus styles */
+/* Monospace for numbers */
+.font-mono {
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-feature-settings: "tnum";
+  font-variant-numeric: tabular-nums;
+}
+
+/* Focus states */
 input:focus,
-textarea:focus {
+textarea:focus,
+button:focus {
   outline: none;
 }
 
-/* Smooth transitions */
-* {
-  transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, transform;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-  transition-duration: 150ms;
+/* Selection */
+::selection {
+  background: rgba(20, 184, 166, 0.3);
+}
+
+/* Animations */
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s ease-in-out infinite;
 }
