@@ -1,19 +1,23 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Search, ArrowRight, X, ArrowRightLeft } from "lucide-react";
+import { Search, ArrowRight, X, ArrowRightLeft, Zap, Clock } from "lucide-react";
 import { parseCommand, ASSETS, formatPrice } from "@/lib/mock-data";
+import { parseSportsBelief, EventMarket, formatProbability, calculatePayout } from "@/lib/events-data";
 import { ParsedCommand } from "@/lib/types";
 
 interface CommandBarProps {
   isOpen: boolean;
   onClose: () => void;
   onExecute: (command: ParsedCommand) => void;
+  onEventBet?: (markets: EventMarket[], side: "yes" | "no", amount: number) => void;
 }
 
-export function CommandBar({ isOpen, onClose, onExecute }: CommandBarProps) {
+export function CommandBar({ isOpen, onClose, onExecute, onEventBet }: CommandBarProps) {
   const [input, setInput] = useState("");
   const [parsed, setParsed] = useState<ParsedCommand | null>(null);
+  const [eventParsed, setEventParsed] = useState<ReturnType<typeof parseSportsBelief> | null>(null);
+  const [betAmount, setBetAmount] = useState(100);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -21,29 +25,145 @@ export function CommandBar({ isOpen, onClose, onExecute }: CommandBarProps) {
       inputRef.current.focus();
       setInput("");
       setParsed(null);
+      setEventParsed(null);
     }
   }, [isOpen]);
 
   useEffect(() => {
     if (input.trim()) {
-      setParsed(parseCommand(input));
+      // Try parsing as crypto command first
+      const cryptoParsed = parseCommand(input);
+      setParsed(cryptoParsed);
+      
+      // Also try parsing as sports/event belief
+      const sportsParsed = parseSportsBelief(input);
+      if (sportsParsed.markets.length > 0) {
+        setEventParsed(sportsParsed);
+      } else {
+        setEventParsed(null);
+      }
     } else {
       setParsed(null);
+      setEventParsed(null);
     }
   }, [input]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
       onClose();
-    } else if (e.key === "Enter" && parsed && parsed.type !== "unknown") {
-      onExecute(parsed);
-      onClose();
+    } else if (e.key === "Enter") {
+      // If we have event markets, execute that
+      if (eventParsed && eventParsed.markets.length > 0 && onEventBet) {
+        onEventBet(eventParsed.markets, "yes", betAmount);
+        onClose();
+      } else if (parsed && parsed.type !== "unknown") {
+        onExecute(parsed);
+        onClose();
+      }
     }
-  }, [onClose, onExecute, parsed]);
+  }, [onClose, onExecute, onEventBet, parsed, eventParsed, betAmount]);
 
   if (!isOpen) return null;
 
+  const hasEventMatch = eventParsed && eventParsed.markets.length > 0;
+  const hasCryptoMatch = parsed && parsed.type !== "unknown";
+
   const getPreviewContent = () => {
+    // Show event preview if we matched sports/event markets
+    if (hasEventMatch) {
+      const markets = eventParsed.markets;
+      const isMultiple = markets.length > 1;
+      
+      // Calculate combined probability and payout
+      const combinedProb = markets.reduce((acc, m) => acc * m.yesPrice, 1);
+      const potentialPayout = calculatePayout(betAmount, combinedProb);
+
+      return (
+        <div className="space-y-3">
+          {/* Header */}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-orange-500/20 rounded-lg">
+              <Zap className="w-4 h-4 text-orange-400" />
+              <span className="text-orange-400 font-medium">
+                {isMultiple ? "Multi-Bet" : "Prediction Market"}
+              </span>
+            </div>
+            {isMultiple && (
+              <span className="text-xs text-[#6b6c6d]">
+                {markets.length} markets combined
+              </span>
+            )}
+          </div>
+
+          {/* Markets */}
+          <div className="space-y-2">
+            {markets.map((market, idx) => (
+              <div 
+                key={market.id}
+                className="p-3 bg-[#1e1f20] rounded-lg border border-[#2d2e2f]"
+              >
+                <div className="flex items-start gap-2">
+                  <span className="text-lg">{market.icon}</span>
+                  <div className="flex-1">
+                    <div className="font-medium text-[#e8e8e8] text-sm">
+                      {market.title}
+                    </div>
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="text-xs px-2 py-0.5 rounded bg-[#20b2aa]/20 text-[#20b2aa]">
+                        YES @ ${market.yesPrice.toFixed(2)}
+                      </span>
+                      <span className="text-xs text-[#6b6c6d]">
+                        {formatProbability(market.yesPrice)} implied
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Bet summary */}
+          <div className="flex items-center justify-between p-3 bg-[#20b2aa]/10 rounded-lg border border-[#20b2aa]/20">
+            <div className="flex items-center gap-4">
+              <div>
+                <div className="text-xs text-[#6b6c6d]">Bet Amount</div>
+                <div className="flex items-center gap-1">
+                  <span className="font-mono text-[#e8e8e8]">${betAmount}</span>
+                  <div className="flex gap-1 ml-2">
+                    {[50, 100, 250, 500].map((amt) => (
+                      <button
+                        key={amt}
+                        onClick={(e) => { e.stopPropagation(); setBetAmount(amt); }}
+                        className={`px-1.5 py-0.5 text-xs rounded ${
+                          betAmount === amt 
+                            ? "bg-[#20b2aa] text-white" 
+                            : "bg-[#2d2e2f] text-[#9a9b9c] hover:bg-[#3d3e3f]"
+                        }`}
+                      >
+                        ${amt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-xs text-[#6b6c6d]">Potential Payout</div>
+              <div className="font-mono font-semibold text-[#20b2aa]">
+                ${potentialPayout.toFixed(0)}
+              </div>
+              {isMultiple && (
+                <div className="text-[10px] text-[#6b6c6d]">
+                  Combined odds: {formatProbability(combinedProb)}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Otherwise show crypto preview
     if (!parsed) return null;
 
     if (parsed.type === "unknown") {
@@ -83,8 +203,6 @@ export function CommandBar({ isOpen, onClose, onExecute }: CommandBarProps) {
             <span>${size.toLocaleString()} per leg</span>
             <span>·</span>
             <span>{parsed.leverage || 2}x leverage</span>
-            <span>·</span>
-            <span>Total: ${(size * 2).toLocaleString()}</span>
           </div>
         </div>
       );
@@ -94,8 +212,6 @@ export function CommandBar({ isOpen, onClose, onExecute }: CommandBarProps) {
       const asset = ASSETS[parsed.asset];
       const size = parsed.size || 1000;
       const leverage = parsed.leverage || 1;
-      const liqDistance = parsed.direction === "long" ? 0.75 : 1.25;
-      const liqPrice = asset.price * liqDistance / leverage;
 
       return (
         <div className="space-y-2">
@@ -112,12 +228,9 @@ export function CommandBar({ isOpen, onClose, onExecute }: CommandBarProps) {
           <div className="flex items-center gap-4 text-sm text-[#9a9b9c]">
             <span>${size.toLocaleString()}</span>
             <span>·</span>
-            <span>{leverage}x leverage</span>
+            <span>{leverage}x</span>
             <span>·</span>
-            <span>Entry ~${formatPrice(asset.price)}</span>
-          </div>
-          <div className="text-xs text-[#6b6c6d]">
-            Liquidation: ${formatPrice(liqPrice)}
+            <span>~${formatPrice(asset.price)}</span>
           </div>
         </div>
       );
@@ -135,47 +248,21 @@ export function CommandBar({ isOpen, onClose, onExecute }: CommandBarProps) {
       return (
         <div className="text-[#e8e8e8]">
           Flip <span className="font-semibold text-[#d4a853]">{parsed.asset}</span> position
-          <span className="text-[#6b6c6d] text-sm ml-2">(close → reverse)</span>
         </div>
       );
     }
 
     if (parsed.type === "closeAll") {
-      return (
-        <div className="text-red-400 font-medium">
-          Close ALL positions
-        </div>
-      );
-    }
-
-    if (parsed.type === "add" && parsed.asset) {
-      return (
-        <div className="text-[#e8e8e8]">
-          Add <span className="text-[#20b2aa]">${parsed.size?.toLocaleString()}</span> to{" "}
-          <span className="font-semibold">{parsed.asset}</span>
-        </div>
-      );
-    }
-
-    if (parsed.type === "reduce" && parsed.asset) {
-      return (
-        <div className="text-[#e8e8e8]">
-          Reduce <span className="font-semibold">{parsed.asset}</span> by{" "}
-          <span className="text-[#d4a853]">{parsed.percent}%</span>
-        </div>
-      );
+      return <div className="text-red-400 font-medium">Close ALL positions</div>;
     }
 
     return null;
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh]">
       {/* Backdrop */}
-      <div 
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-        onClick={onClose}
-      />
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       
       {/* Command bar */}
       <div className="relative w-full max-w-2xl mx-4">
@@ -189,32 +276,40 @@ export function CommandBar({ isOpen, onClose, onExecute }: CommandBarProps) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="sol long 10k 2x  or  sol vs eth 10k"
+              placeholder="sol long 10k 2x  ·  lakers win tonight  ·  btc 100k by december"
               className="flex-1 bg-transparent text-[#e8e8e8] text-lg placeholder-[#6b6c6d] focus:outline-none"
               spellCheck={false}
               autoComplete="off"
             />
-            <button 
-              onClick={onClose}
-              className="p-1.5 hover:bg-[#2d2e2f] rounded-lg transition-colors"
-            >
+            <button onClick={onClose} className="p-1.5 hover:bg-[#2d2e2f] rounded-lg transition-colors">
               <X className="w-5 h-5 text-[#6b6c6d]" />
             </button>
           </div>
 
-          {/* Divider */}
           <div className="border-t border-[#2d2e2f]" />
 
           {/* Preview area */}
-          <div className="px-5 py-4 min-h-[80px]">
+          <div className="px-5 py-4 min-h-[100px]">
             {getPreviewContent() || (
-              <div className="space-y-2 text-sm text-[#6b6c6d]">
-                <div className="font-medium text-[#9a9b9c]">Examples:</div>
-                <div className="flex flex-wrap gap-2">
-                  <code className="px-2 py-1 bg-[#1e1f20] rounded text-[#9a9b9c]">sol long 10k 2x</code>
-                  <code className="px-2 py-1 bg-[#1e1f20] rounded text-[#9a9b9c]">sol vs eth 10k</code>
-                  <code className="px-2 py-1 bg-[#1e1f20] rounded text-[#9a9b9c]">close btc</code>
-                  <code className="px-2 py-1 bg-[#1e1f20] rounded text-[#9a9b9c]">flip eth</code>
+              <div className="space-y-3 text-sm">
+                <div className="text-[#9a9b9c] font-medium">What do you believe?</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-2 bg-[#1e1f20] rounded-lg">
+                    <div className="text-xs text-[#6b6c6d] mb-1">Crypto</div>
+                    <code className="text-xs text-[#9a9b9c]">sol long 10k 2x</code>
+                  </div>
+                  <div className="p-2 bg-[#1e1f20] rounded-lg">
+                    <div className="text-xs text-[#6b6c6d] mb-1">Pairs</div>
+                    <code className="text-xs text-[#9a9b9c]">sol vs eth 10k</code>
+                  </div>
+                  <div className="p-2 bg-[#1e1f20] rounded-lg">
+                    <div className="text-xs text-[#6b6c6d] mb-1">Sports</div>
+                    <code className="text-xs text-[#9a9b9c]">lakers win tonight</code>
+                  </div>
+                  <div className="p-2 bg-[#1e1f20] rounded-lg">
+                    <div className="text-xs text-[#6b6c6d] mb-1">Events</div>
+                    <code className="text-xs text-[#9a9b9c]">btc 100k by december</code>
+                  </div>
                 </div>
               </div>
             )}
@@ -232,7 +327,7 @@ export function CommandBar({ isOpen, onClose, onExecute }: CommandBarProps) {
                 <span>Cancel</span>
               </span>
             </div>
-            {parsed && parsed.type !== "unknown" && (
+            {(hasEventMatch || hasCryptoMatch) && (
               <div className="flex items-center gap-1.5 text-[#20b2aa]">
                 <span>Ready</span>
                 <ArrowRight className="w-3.5 h-3.5" />
