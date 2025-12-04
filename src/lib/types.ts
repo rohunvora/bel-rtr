@@ -1,64 +1,81 @@
-export interface ParsedIntent {
-  assets: string[];
-  direction: "long" | "short" | "unknown";
-  timeframeHours: number;
-  confidence: number;
-  summary: string;
-}
-
-export interface TradeSuggestion {
+export interface Position {
   id: string;
-  label: string;
-  ticker: string;
-  name: string;
-  venue: string;
+  asset: string;
+  assetName: string;
   direction: "long" | "short";
+  size: number;
   leverage: number;
-  sizeUsd: number;
-  timeframeHours: number;
-  stopLossPct: number;
-  takeProfitPct: number;
-  riskLevel: "safe" | "moderate" | "aggressive";
-  explanation: string;
-  currentPrice: number;
-  priceChange24h: number;
-  priceChangePct24h: number;
-  stats: {
-    prevClose: number;
-    open: number;
-    dayRange: string;
-    weekRange52: string;
-    volume: string;
-    marketCap: string;
-    peRatio?: number;
-    eps?: number;
-  };
-  payoffPreview: {
-    maxGainUsd: number;
-    maxLossUsd: number;
-    maxGainPct: number;
-    maxLossPct: number;
-  };
-}
-
-export interface AlternativeTrade extends TradeSuggestion {
-  variant: "safer" | "riskier" | "different_venue";
-}
-
-export interface LivePosition {
-  positionId: string;
-  ticker: string;
-  name: string;
-  direction: "long" | "short";
   entryPrice: number;
   currentPrice: number;
-  sizeUsd: number;
-  leverage: number;
-  pnlUsd: number;
-  pnlPct: number;
+  pnl: number;
+  pnlPercent: number;
+  liquidationPrice: number;
   openedAt: string;
-  timeRemainingSeconds: number;
-  status: "open" | "closing" | "closed";
+  timeframe?: number; // hours
 }
 
-export type ViewState = "home" | "results" | "position";
+export interface PairPosition {
+  id: string;
+  type: "pair";
+  longAsset: string;
+  shortAsset: string;
+  size: number;
+  leverage: number;
+  pnl: number;
+  pnlPercent: number;
+  positions: [Position, Position];
+}
+
+export interface BasketPosition {
+  id: string;
+  type: "basket";
+  name: string;
+  totalSize: number;
+  pnl: number;
+  pnlPercent: number;
+  positions: Position[];
+}
+
+export interface Mover {
+  asset: string;
+  assetName: string;
+  price: number;
+  change1h: number;
+  change24h: number;
+  volume24h: string;
+}
+
+export interface ParsedCommand {
+  type: "trade" | "close" | "flip" | "add" | "reduce" | "closeAll" | "unknown";
+  asset?: string;
+  direction?: "long" | "short";
+  size?: number;
+  leverage?: number;
+  timeframe?: string;
+  percent?: number;
+  error?: string;
+}
+
+export interface PortfolioSummary {
+  totalValue: number;
+  totalExposure: number;
+  netPnl: number;
+  todayPnl: number;
+  marginUsed: number;
+  longExposure: number;
+  shortExposure: number;
+}
+
+export interface Trade {
+  id: string;
+  asset: string;
+  direction: "long" | "short";
+  size: number;
+  leverage: number;
+  entryPrice: number;
+  exitPrice?: number;
+  pnl?: number;
+  status: "open" | "closed";
+  openedAt: string;
+  closedAt?: string;
+}
