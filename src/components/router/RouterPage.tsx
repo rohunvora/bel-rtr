@@ -6,6 +6,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { TradePlanCard, TwapPlanCard } from "./TradePlanCard";
 import { TradeCard } from "./TradeCard";
 import { LockRiskModal } from "./LockRiskModal";
+import { ThinkingIndicator, getThinkingText } from "./ThinkingIndicator";
 import { PredictionCard, StockCard, ThesisExplorerCard, TargetTradeCard, PortfolioActionCard } from "./modals";
 import { ToastContainer, ToastMessage } from "@/components/Toast";
 import { FlashingPrice } from "@/components/AnimatedPrice";
@@ -50,6 +51,7 @@ type TwapPlanInput = {
 // Modal state types
 type ModalState = 
   | { type: "none" }
+  | { type: "thinking"; intentType: string; prompt: string }
   | { type: "crypto"; plan: CryptoPlan; prompt: string }
   | { type: "twap"; plan: TwapPlanInput; prompt: string }
   | { type: "prediction"; market: string; platform: "polymarket" | "kalshi"; odds: number; prompt: string }
@@ -193,121 +195,151 @@ export function RouterPage() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // Intent detection
+  // Thinking delay duration (ms) - varies slightly for realism
+  const getThinkingDuration = () => 800 + Math.random() * 600;
+
+  // Show result after thinking
+  const showResult = useCallback((result: ModalState) => {
+    setModalState(result);
+  }, []);
+
+  // Intent detection with thinking state
   const processInput = useCallback((text: string) => {
     const lower = text.toLowerCase();
 
+    // Detect intent type first
+    let intentType = "crypto";
+    let resultState: ModalState | null = null;
+
     // Check for portfolio management keywords
     if (lower.includes("cut") && (lower.includes("risk") || lower.includes("exposure") || lower.includes("half"))) {
-      setModalState({ type: "portfolio_action", action: "reduce", prompt: text });
-      return;
-    }
-    if (lower.includes("close all") || lower.includes("exit everything")) {
-      setModalState({ type: "portfolio_action", action: "close_all", prompt: text });
-      return;
+      intentType = "portfolio_action";
+      resultState = { type: "portfolio_action", action: "reduce", prompt: text };
+    } else if (lower.includes("close all") || lower.includes("exit everything")) {
+      intentType = "portfolio_action";
+      resultState = { type: "portfolio_action", action: "close_all", prompt: text };
     }
 
     // Check for target price patterns
-    const targetMatch = lower.match(/(btc|eth|sol)\s+(?:to|at|hits?)\s+(\d+(?:k)?)/i);
-    if (targetMatch) {
-      const symbol = targetMatch[1].toUpperCase();
-      let targetPrice = parseFloat(targetMatch[2].replace("k", "000"));
-      const deadlineMatch = lower.match(/by\s+(january|february|march|april|may|june|july|august|september|october|november|december|eoy|end of year)/i);
-      setModalState({ 
-        type: "target", 
-        symbol, 
-        targetPrice, 
-        deadline: deadlineMatch?.[1],
-        prompt: text 
-      });
-      return;
+    if (!resultState) {
+      const targetMatch = lower.match(/(btc|eth|sol)\s+(?:to|at|hits?)\s+(\d+(?:k)?)/i);
+      if (targetMatch) {
+        const symbol = targetMatch[1].toUpperCase();
+        const targetPrice = parseFloat(targetMatch[2].replace("k", "000"));
+        const deadlineMatch = lower.match(/by\s+(january|february|march|april|may|june|july|august|september|october|november|december|eoy|end of year)/i);
+        intentType = "target";
+        resultState = { 
+          type: "target", 
+          symbol, 
+          targetPrice, 
+          deadline: deadlineMatch?.[1],
+          prompt: text 
+        };
+      }
     }
 
     // Check for prediction market keywords
-    for (const [keyword, data] of Object.entries(PREDICTION_MARKETS)) {
-      if (lower.includes(keyword)) {
-        setModalState({ 
-          type: "prediction", 
-          market: data.market, 
-          platform: data.platform, 
-          odds: data.odds,
-          prompt: text 
-        });
-        return;
+    if (!resultState) {
+      for (const [keyword, data] of Object.entries(PREDICTION_MARKETS)) {
+        if (lower.includes(keyword)) {
+          intentType = "prediction";
+          resultState = { 
+            type: "prediction", 
+            market: data.market, 
+            platform: data.platform, 
+            odds: data.odds,
+            prompt: text 
+          };
+          break;
+        }
       }
     }
 
     // Check for stock/thesis keywords
-    for (const [keyword, data] of Object.entries(STOCK_THESES)) {
-      if (lower.includes(keyword)) {
-        setModalState({ 
-          type: "stock", 
-          ticker: data.ticker, 
-          company: data.company, 
-          price: data.price,
-          thesis: data.thesis,
-          prompt: text 
-        });
-        return;
+    if (!resultState) {
+      for (const [keyword, data] of Object.entries(STOCK_THESES)) {
+        if (lower.includes(keyword)) {
+          intentType = "stock";
+          resultState = { 
+            type: "stock", 
+            ticker: data.ticker, 
+            company: data.company, 
+            price: data.price,
+            thesis: data.thesis,
+            prompt: text 
+          };
+          break;
+        }
       }
     }
 
     // Check for thesis explorer patterns
-    if (lower.includes("overhyped") || lower.includes("overvalued") || lower.includes("undervalued") || lower.includes("bullish on") || lower.includes("bearish on")) {
+    if (!resultState && (lower.includes("overhyped") || lower.includes("overvalued") || lower.includes("undervalued") || lower.includes("bullish on") || lower.includes("bearish on"))) {
       const sentiment = lower.includes("overhyped") || lower.includes("overvalued") || lower.includes("bearish") ? "bearish" : "bullish";
-      setModalState({ type: "thesis", thesis: text, sentiment, prompt: text });
-      return;
+      intentType = "thesis";
+      resultState = { type: "thesis", thesis: text, sentiment, prompt: text };
     }
 
     // Default: crypto trade
-    const intent = parseRouterIntent(text);
-    
-    if (intent.type === "twap") {
-      const symbol = intent.market?.split("-")[0] || "ETH";
-      const livePrice = prices[symbol]?.price || 3500;
+    if (!resultState) {
+      const intent = parseRouterIntent(text);
       
-      setModalState({
-        type: "twap",
-        plan: {
-          market: intent.market || "ETH-PERP",
-          direction: intent.direction || "long",
-          totalNotional: intent.notional || 50000,
-          maxRisk: intent.risk || 3000,
-          stopPrice: Math.round(livePrice * 0.95),
-          duration: 15,
-          slices: 5,
-          priceRangeLow: Math.round(livePrice * 0.99),
-          priceRangeHigh: Math.round(livePrice * 1.01),
-        },
-        prompt: text,
-      });
+      if (intent.type === "twap") {
+        const symbol = intent.market?.split("-")[0] || "ETH";
+        const livePrice = prices[symbol]?.price || 3500;
+        intentType = "twap";
+        resultState = {
+          type: "twap",
+          plan: {
+            market: intent.market || "ETH-PERP",
+            direction: intent.direction || "long",
+            totalNotional: intent.notional || 50000,
+            maxRisk: intent.risk || 3000,
+            stopPrice: Math.round(livePrice * 0.95),
+            duration: 15,
+            slices: 5,
+            priceRangeLow: Math.round(livePrice * 0.99),
+            priceRangeHigh: Math.round(livePrice * 1.01),
+          },
+          prompt: text,
+        };
+      } else if (intent.type === "trade") {
+        const symbol = intent.market?.split("-")[0] || "BTC";
+        const livePrice = prices[symbol]?.price;
+        
+        if (!livePrice) {
+          addToast("error", "Waiting for price data", "Try again in a moment");
+          return;
+        }
+
+        const direction = intent.direction || "long";
+        const risk = intent.risk || 3000;
+        const plan = createTradePlan(intent.market || "BTC-PERP", direction, livePrice, risk);
+        
+        if (intent.stop) {
+          plan.stopPrice = intent.stop;
+          plan.size = Math.abs(calculateSize(risk, livePrice, intent.stop, direction));
+        }
+
+        intentType = "crypto";
+        resultState = { type: "crypto", plan, prompt: text };
+      }
+    }
+
+    if (!resultState) {
+      addToast("error", "I didn't understand that", "Try one of the examples");
       return;
     }
-    
-    if (intent.type === "trade") {
-      const symbol = intent.market?.split("-")[0] || "BTC";
-      const livePrice = prices[symbol]?.price;
-      
-      if (!livePrice) {
-        addToast("error", "Waiting for price data", "Try again in a moment");
-        return;
-      }
 
-      const direction = intent.direction || "long";
-      const risk = intent.risk || 3000;
-      const plan = createTradePlan(intent.market || "BTC-PERP", direction, livePrice, risk);
-      
-      if (intent.stop) {
-        plan.stopPrice = intent.stop;
-        plan.size = Math.abs(calculateSize(risk, livePrice, intent.stop, direction));
-      }
+    // Show thinking state first
+    setModalState({ type: "thinking", intentType, prompt: text });
 
-      setModalState({ type: "crypto", plan, prompt: text });
-      return;
-    }
+    // Then show result after delay
+    setTimeout(() => {
+      showResult(resultState!);
+    }, getThinkingDuration());
 
-    addToast("error", "I didn't understand that", "Try one of the examples");
-  }, [prices, addToast]);
+  }, [prices, addToast, showResult]);
 
   const handleSubmit = () => {
     if (input.trim()) {
@@ -591,8 +623,17 @@ export function RouterPage() {
               </div>
             )}
 
+            {/* Thinking state */}
+            {modalState.type === "thinking" && (
+              <div ref={resultsRef}>
+                <ThinkingIndicator 
+                  {...getThinkingText(modalState.intentType, modalState.prompt)} 
+                />
+              </div>
+            )}
+
             {/* Results */}
-            {modalState.type !== "none" && (
+            {modalState.type !== "none" && modalState.type !== "thinking" && (
               <div ref={resultsRef}>
                 {modalState.type === "crypto" && (
                   <TradePlanCard
