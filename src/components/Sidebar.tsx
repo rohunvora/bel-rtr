@@ -6,10 +6,17 @@ import { Zap, LayoutDashboard, Settings, HelpCircle, Menu, X, PanelLeftClose, Pa
 interface SidebarProps {
   isCollapsed?: boolean;
   onToggle?: () => void;
+  activePage?: string;
+  onNavigate?: (page: string) => void;
 }
 
-export function Sidebar({ isCollapsed = false, onToggle }: SidebarProps) {
+export function Sidebar({ isCollapsed = false, onToggle, activePage = "trade", onNavigate }: SidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const handleNavigate = (page: string) => {
+    onNavigate?.(page);
+    setMobileOpen(false);
+  };
 
   return (
     <>
@@ -50,16 +57,34 @@ export function Sidebar({ isCollapsed = false, onToggle }: SidebarProps) {
       `}>
         {/* Logo */}
         <div className="p-3 flex justify-center border-b border-[#2d2e2f]">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#20b2aa] to-[#1a9089] flex items-center justify-center">
+          <button 
+            onClick={() => handleNavigate("trade")}
+            className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#20b2aa] to-[#1a9089] flex items-center justify-center hover:opacity-90 transition-opacity"
+          >
             <Zap className="w-5 h-5 text-white" />
-          </div>
+          </button>
         </div>
 
         {/* Nav */}
         <nav className="flex-1 p-2 space-y-1">
-          <NavItem icon={LayoutDashboard} label="Trade" active />
-          <NavItem icon={Settings} label="Settings" disabled />
-          <NavItem icon={HelpCircle} label="Help" disabled />
+          <NavItem 
+            icon={LayoutDashboard} 
+            label="Trade" 
+            active={activePage === "trade"} 
+            onClick={() => handleNavigate("trade")}
+          />
+          <NavItem 
+            icon={Settings} 
+            label="Settings" 
+            active={activePage === "settings"}
+            onClick={() => handleNavigate("settings")}
+          />
+          <NavItem 
+            icon={HelpCircle} 
+            label="Help" 
+            active={activePage === "help"}
+            onClick={() => handleNavigate("help")}
+          />
         </nav>
 
         {/* Collapse button - desktop only */}
@@ -94,16 +119,19 @@ function NavItem({
   icon: Icon, 
   label, 
   active = false,
-  disabled = false 
+  disabled = false,
+  onClick
 }: { 
   icon: React.ElementType; 
   label: string; 
   active?: boolean;
   disabled?: boolean;
+  onClick?: () => void;
 }) {
   return (
     <button
       disabled={disabled}
+      onClick={onClick}
       title={label}
       className={`w-full flex items-center justify-center p-2.5 rounded-lg transition-colors btn-press ${
         active 

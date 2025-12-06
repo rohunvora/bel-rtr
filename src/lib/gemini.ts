@@ -31,7 +31,7 @@ export async function analyzeChart(imageBase64: string, prompt?: string): Promis
   }
 
   try {
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = ai.getGenerativeModel({ model: "gemini-2.0-flash" });
     
     const analysisPrompt = prompt || `Analyze this trading chart. Identify:
 1. Key support levels (with prices)
@@ -75,7 +75,7 @@ export async function chat(message: string, imageBase64?: string): Promise<Gemin
   }
 
   try {
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = ai.getGenerativeModel({ model: "gemini-2.0-flash" });
     
     const content: any[] = [];
     

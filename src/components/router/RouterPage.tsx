@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { ArrowUp, Coins, Vote, Building2, Wifi, WifiOff, Target, Layers, Sparkles, Clock, X, Image as ImageIcon, Loader2 } from "lucide-react";
+import { ArrowUp, Coins, Vote, Building2, Wifi, WifiOff, Target, Layers, Sparkles, Clock, X, Image as ImageIcon, Loader2, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
+import { SettingsView } from "./SettingsView";
+import { HelpView } from "./HelpView";
 import { TradePlanCard, TwapPlanCard } from "./TradePlanCard";
 import { TradeCard } from "./TradeCard";
 import { LockRiskModal } from "./LockRiskModal";
@@ -168,6 +170,7 @@ function createTradePlan(
 
 export function RouterPage() {
   const { prices, isConnected } = useLivePrices();
+  const [activePage, setActivePage] = useState("trade");
   const [input, setInput] = useState("");
   const [pastedImage, setPastedImage] = useState<string | null>(null); // base64
   const [modalState, setModalState] = useState<ModalState>({ type: "none" });
@@ -178,6 +181,7 @@ export function RouterPage() {
   const [initialized, setInitialized] = useState(false);
   const [showOnboarding, dismissOnboarding] = useOnboarding();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [portfolioCollapsed, setPortfolioCollapsed] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
@@ -880,15 +884,42 @@ export function RouterPage() {
         </div>
       </div>
 
+      {/* Portfolio panel toggle - shows when collapsed */}
+      {portfolioCollapsed && (
+        <button
+          onClick={() => setPortfolioCollapsed(false)}
+          className="hidden lg:flex fixed top-4 right-4 z-50 p-2 bg-[#1e1f20] border border-[#2d2e2f] rounded-lg hover:bg-[#242526] transition-colors items-center gap-2"
+          title="Show portfolio"
+        >
+          <PanelRightOpen className="w-5 h-5 text-[#e8e8e8]" />
+          {portfolio.length > 0 && (
+            <span className="text-xs text-[#6b6c6d]">{portfolio.length}</span>
+          )}
+        </button>
+      )}
+
       {/* Portfolio panel - right side */}
-      <div className="hidden lg:flex w-80 flex-shrink-0 flex-col border-l border-[#2d2e2f] bg-[#1a1b1b]">
-        <div className="p-4 border-b border-[#2d2e2f]">
+      <div className={`
+        hidden lg:flex flex-shrink-0 flex-col border-l border-[#2d2e2f] bg-[#1a1b1b]
+        transition-all duration-300 ease-out
+        ${portfolioCollapsed ? 'w-0 border-l-0 overflow-hidden' : 'w-80'}
+      `}>
+        <div className="p-4 border-b border-[#2d2e2f] min-w-[320px]">
           <div className="flex items-center justify-between">
-            <span className="font-medium text-[#e8e8e8]">Portfolio</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPortfolioCollapsed(true)}
+                className="p-1.5 -ml-1.5 rounded-lg hover:bg-[#242526] transition-colors"
+                title="Collapse portfolio"
+              >
+                <PanelRightClose className="w-4 h-4 text-[#6b6c6d] hover:text-[#e8e8e8] transition-colors" />
+              </button>
+              <span className="font-medium text-[#e8e8e8]">Portfolio</span>
+            </div>
             <span className="text-xs text-[#6b6c6d]">{portfolio.length} active</span>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+        <div className="flex-1 overflow-y-auto p-3 space-y-2 min-w-[320px]">
           {portfolio.length === 0 ? (
             <div className="text-center py-12 text-sm text-[#6b6c6d]">
               <div className="mb-2">No positions yet</div>
@@ -906,7 +937,7 @@ export function RouterPage() {
             ))
           )}
         </div>
-        <div className="p-3 border-t border-[#2d2e2f] text-center">
+        <div className="p-3 border-t border-[#2d2e2f] text-center min-w-[320px]">
           <div className="text-xs text-[#6b6c6d]">Demo • No real trades</div>
         </div>
       </div>
