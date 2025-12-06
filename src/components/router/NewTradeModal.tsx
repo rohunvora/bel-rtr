@@ -45,7 +45,7 @@ export function NewTradeModal({ isOpen, onClose, onArm, initialPlan }: NewTradeM
       sizeUnit: initialPlan.sizeUnit,
       entryPrice: initialPlan.entryPrice,
       leverage: initialPlan.leverage,
-      status: "armed",
+      status: "confirmed",
       createdAt: new Date().toISOString(),
     };
     onArm(plan);
@@ -114,7 +114,7 @@ export function NewTradeModal({ isOpen, onClose, onArm, initialPlan }: NewTradeM
           className="flex items-center gap-2 text-sm text-[#6b6c6d] hover:text-[#9a9b9c] transition-colors"
         >
           {showDetails ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          Adjust Details
+          Edit
         </button>
 
         {/* Expanded details editor */}
@@ -170,7 +170,7 @@ export function NewTradeModal({ isOpen, onClose, onArm, initialPlan }: NewTradeM
                 : "bg-red-500 hover:bg-red-400 text-white"
             }`}
           >
-            Arm Trade
+            Confirm Trade
           </button>
         </div>
       </div>

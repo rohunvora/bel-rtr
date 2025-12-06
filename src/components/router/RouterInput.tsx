@@ -42,7 +42,7 @@ export function RouterInput({ onSubmit, disabled }: RouterInputProps) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Describe your trade idea... e.g., 'short BTC max 3k risk, stop above 92k'"
+          placeholder="e.g., short BTC with $3k max risk, stop at 92k"
           disabled={disabled}
           rows={1}
           className="w-full bg-transparent text-[#e8e8e8] placeholder-[#6b6c6d] px-4 py-4 pr-14 resize-none focus:outline-none text-base leading-relaxed"
@@ -66,9 +66,9 @@ export function RouterInput({ onSubmit, disabled }: RouterInputProps) {
       {/* Suggestions */}
       <div className="mt-3 flex flex-wrap gap-2">
         {[
-          "short BTC max 3k risk, stop 92k",
-          "long SOL risk 2k invalidation 180",
-          "twap ZEC 50k, books thin",
+          "short BTC, $3k max risk, stop at 92k",
+          "long SOL, risk $2k, stop at 180",
+          "buy $50k of ZEC slowly over 15 min",
         ].map((suggestion) => (
           <button
             key={suggestion}

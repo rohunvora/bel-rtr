@@ -292,7 +292,7 @@ export function CommandBar({ isOpen, onClose, onExecute, onEventBet }: CommandBa
           <div className="px-5 py-4 min-h-[100px]">
             {getPreviewContent() || (
               <div className="space-y-3 text-sm">
-                <div className="text-[#9a9b9c] font-medium">What do you believe?</div>
+                <div className="text-[#9a9b9c] font-medium">What do you want to trade?</div>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="p-2 bg-[#1e1f20] rounded-lg">
                     <div className="text-xs text-[#6b6c6d] mb-1">Crypto</div>

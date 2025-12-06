@@ -11,7 +11,7 @@ interface TradeCardProps {
 
 export function TradeCard({ plan, onLockRisk, onRemove }: TradeCardProps) {
   const isLong = plan.direction === "long";
-  const isLocked = plan.status === "locked";
+  const isLocked = plan.status === "protected";
 
   return (
     <div className="group relative p-4 bg-[#242526] rounded-xl border border-[#2d2e2f] hover:border-[#3d3e3f] transition-colors">
@@ -43,12 +43,12 @@ export function TradeCard({ plan, onLockRisk, onRemove }: TradeCardProps) {
             {isLocked && (
               <span className="flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded bg-[#d4a853]/20 text-[#d4a853]">
                 <Lock className="w-3 h-3" />
-                Locked
+                Protected
               </span>
             )}
           </div>
           <div className="text-xs text-[#6b6c6d] mt-0.5">
-            Armed • Demo only
+            Confirmed • Demo only
           </div>
         </div>
       </div>
@@ -82,7 +82,7 @@ export function TradeCard({ plan, onLockRisk, onRemove }: TradeCardProps) {
           className="mt-4 w-full flex items-center justify-center gap-2 px-3 py-2 bg-[#1e1f20] hover:bg-[#2d2e2f] border border-[#3d3e3f] rounded-lg text-sm text-[#9a9b9c] hover:text-[#e8e8e8] transition-colors"
         >
           <Shield className="w-4 h-4" />
-          Lock Risk
+          Set Risk Limit
         </button>
       )}
     </div>
@@ -116,11 +116,11 @@ export function TwapCard({ plan, onRemove }: TwapCardProps) {
           <div className="flex items-center gap-2">
             <span className="font-semibold text-[#e8e8e8]">{plan.market}</span>
             <span className="text-xs font-medium px-2 py-0.5 rounded bg-purple-500/20 text-purple-400">
-              TWAP
+              Gradual
             </span>
           </div>
           <div className="text-xs text-[#6b6c6d] mt-0.5">
-            Planned • Demo only
+            Scheduled • Demo only
           </div>
         </div>
       </div>

@@ -10,7 +10,7 @@ export interface TradePlan {
   sizeUnit: string;
   entryPrice: number;
   leverage: number;
-  status: "planned" | "armed" | "locked";
+  status: "planned" | "confirmed" | "protected";
   createdAt: string;
 }
 

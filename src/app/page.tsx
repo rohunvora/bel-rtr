@@ -371,7 +371,7 @@ export default function Home() {
                 className="flex items-center gap-2 px-4 py-2 bg-[#242526] hover:bg-[#2d2e2f] border border-[#2d2e2f] rounded-xl transition-colors"
               >
                 <Command className="w-4 h-4 text-[#6b6c6d]" />
-                <span className="text-[#9a9b9c]">Express a belief</span>
+                <span className="text-[#9a9b9c]">New trade</span>
                 <kbd className="px-1.5 py-0.5 bg-[#1e1f20] rounded text-xs text-[#6b6c6d] font-mono">⌘K</kbd>
               </button>
             </div>
@@ -397,10 +397,10 @@ export default function Home() {
                   {/* Hero */}
                   <div className="text-center py-8">
                     <h1 className="text-3xl font-semibold text-[#e8e8e8] mb-3">
-                      Express any belief. We&apos;ll route it.
+                      Trade any market. One command.
                     </h1>
                     <p className="text-[#9a9b9c] text-lg max-w-xl mx-auto">
-                      Type what you believe in natural language. We find the best way to express it across crypto, sports, and prediction markets.
+                      Type what you want to trade in plain English. We&apos;ll execute it across crypto, sports, and prediction markets.
                     </p>
                     <button
                       onClick={() => setCommandBarOpen(true)}

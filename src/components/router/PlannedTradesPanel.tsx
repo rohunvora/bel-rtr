@@ -45,9 +45,9 @@ export function PlannedTradesPanel({
               <Layers className="w-6 h-6 text-[#3d3e3f]" />
             </div>
             <p className="text-sm text-[#6b6c6d] leading-relaxed">
-              No planned trades yet.
+              No trades yet.
               <br />
-              <span className="text-[#9a9b9c]">Describe your idea to router.</span>
+              <span className="text-[#9a9b9c]">Describe your trade idea to get started.</span>
             </p>
           </div>
         ) : (

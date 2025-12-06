@@ -93,8 +93,8 @@ export function RouterPage() {
     setTrades((prev) => [...prev, plan]);
     addToast(
       "success",
-      `${plan.market} ${plan.direction.toUpperCase()} armed`,
-      `${plan.size.toFixed(plan.size > 10 ? 1 : 2)} ${plan.sizeUnit} • Risk: $${plan.maxRisk.toLocaleString()} (demo)`
+      `${plan.market} ${plan.direction.toUpperCase()} confirmed`,
+      `${plan.size.toFixed(plan.size > 10 ? 1 : 2)} ${plan.sizeUnit} • Max risk: $${plan.maxRisk.toLocaleString()} (demo)`
     );
   }, [addToast]);
 
@@ -102,8 +102,8 @@ export function RouterPage() {
     setTwaps((prev) => [...prev, plan]);
     addToast(
       "success",
-      `TWAP started: ${plan.market}`,
-      `$${plan.totalNotional.toLocaleString()} over ${plan.duration} min (demo)`
+      `Execution started: ${plan.market}`,
+      `$${plan.totalNotional.toLocaleString()} over ${plan.duration} minutes (demo)`
     );
   }, [addToast]);
 
@@ -117,9 +117,9 @@ export function RouterPage() {
 
   const handleConfirmLock = useCallback((planId: string) => {
     setTrades((prev) =>
-      prev.map((t) => (t.id === planId ? { ...t, status: "locked" as const } : t))
+      prev.map((t) => (t.id === planId ? { ...t, status: "protected" as const } : t))
     );
-    addToast("success", "Risk locked", "Position protected (demo)");
+    addToast("success", "Risk limit enabled", "This position is now protected (demo)");
   }, [addToast]);
 
   const handleRemoveTrade = useCallback((planId: string) => {
@@ -148,8 +148,8 @@ export function RouterPage() {
               <Zap className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-semibold text-[#e8e8e8]">router</h1>
-              <p className="text-sm text-[#6b6c6d]">Turn ideas into risk-bounded trades</p>
+              <h1 className="text-xl font-semibold text-[#e8e8e8]">Router</h1>
+              <p className="text-sm text-[#6b6c6d]">Structure trades with built-in risk limits</p>
             </div>
           </div>
         </header>
@@ -160,12 +160,12 @@ export function RouterPage() {
             {/* Hero text */}
             <div className="text-center mb-8">
               <h2 className="text-3xl font-semibold text-[#e8e8e8] mb-3">
-                What&apos;s your trade idea?
+                What do you want to trade?
               </h2>
               <p className="text-[#9a9b9c] text-lg">
-                Describe it in plain English. router will structure the position,
+                Describe your trade in plain English. We&apos;ll calculate the right
                 <br />
-                calculate size, and set your stop.
+                position size, entry, and stop based on your risk.
               </p>
             </div>
 
@@ -177,18 +177,18 @@ export function RouterPage() {
               {[
                 {
                   step: "1",
-                  title: "Describe your idea",
-                  desc: "Type what you want to trade in plain English",
+                  title: "Describe your trade",
+                  desc: "Tell us what you want to trade and your max risk",
                 },
                 {
                   step: "2",
-                  title: "router structures it",
-                  desc: "Size, entry, stop — calculated for your risk",
+                  title: "Review the plan",
+                  desc: "See the calculated size, entry, and stop",
                 },
                 {
                   step: "3",
-                  title: "Arm the trade",
-                  desc: "One tap to confirm your bounded position",
+                  title: "Confirm",
+                  desc: "One click to place your risk-limited trade",
                 },
               ].map((item) => (
                 <div key={item.step} className="text-center">

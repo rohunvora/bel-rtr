@@ -89,7 +89,7 @@ export function TwapModal({ isOpen, onClose, onStart, initialPlan }: TwapModalPr
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-sm text-[#9a9b9c]">
             <Clock className="w-4 h-4" />
-            <span>TWAP Plan</span>
+            <span>Execution Schedule</span>
           </div>
 
           {/* Timeline dots */}
@@ -130,7 +130,7 @@ export function TwapModal({ isOpen, onClose, onStart, initialPlan }: TwapModalPr
 
           {/* Price range note */}
           <div className="text-center text-xs text-[#6b6c6d]">
-            Entries spread between {formatNumber(initialPlan.priceRangeLow, 1)} – {formatNumber(initialPlan.priceRangeHigh, 1)} to reduce impact
+            Orders spread between {formatNumber(initialPlan.priceRangeLow, 1)} – {formatNumber(initialPlan.priceRangeHigh, 1)} to reduce market impact
           </div>
         </div>
 
@@ -140,7 +140,7 @@ export function TwapModal({ isOpen, onClose, onStart, initialPlan }: TwapModalPr
           className="flex items-center gap-2 text-sm text-[#6b6c6d] hover:text-[#9a9b9c] transition-colors"
         >
           {showDetails ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          Edit Plan
+          Adjust
         </button>
 
         {/* Expanded editor */}
@@ -188,7 +188,7 @@ export function TwapModal({ isOpen, onClose, onStart, initialPlan }: TwapModalPr
             onClick={handleStart}
             className="flex-[2] px-4 py-3 bg-[#20b2aa] hover:bg-[#2cc5bc] text-white font-semibold rounded-xl transition-colors"
           >
-            Start TWAP
+            Start Execution
           </button>
         </div>
       </div>
