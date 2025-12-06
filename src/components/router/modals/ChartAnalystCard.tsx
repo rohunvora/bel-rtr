@@ -3,18 +3,16 @@
 import { useState, useRef, useEffect } from "react";
 import { 
   ChevronDown, 
-  ChevronUp, 
   TrendingDown, 
   TrendingUp, 
-  Clock, 
   Zap,
   X,
   Eye,
   EyeOff,
   ArrowRight,
+  ArrowUp,
+  ArrowDown,
   Loader2,
-  AlertCircle,
-  Ban,
   Copy,
   Check,
   ExternalLink,
@@ -22,8 +20,13 @@ import {
   Send,
   User,
   Sparkles,
-  ImageIcon,
-  Plus
+  Plus,
+  Target,
+  BookOpen,
+  BarChart3,
+  HelpCircle,
+  TrendingUp as TrendUp,
+  Percent
 } from "lucide-react";
 import { ChartAnalysis } from "@/lib/chart-analysis";
 import { chatWithHistory, ChatMessage } from "@/lib/gemini";
@@ -48,65 +51,111 @@ export interface TradeSetup {
   zone: { high: number; low: number };
 }
 
-// Zone tag colors
-const TAG_COLORS: Record<string, string> = {
-  "Prior Support": "bg-emerald-500/20 text-emerald-400",
-  "Prior Resistance": "bg-rose-500/20 text-rose-400",
-  "Breakdown Origin": "bg-rose-500/20 text-rose-400",
-  "Rally Origin": "bg-emerald-500/20 text-emerald-400",
-  "Mid-range": "bg-amber-500/20 text-amber-400",
-  "Chop Zone": "bg-amber-500/20 text-amber-400",
-  "HTF Level": "bg-cyan-500/20 text-cyan-400",
-  "Recent Consolidation": "bg-[#3d3e3f] text-[#9a9b9c]",
-};
+// ============================================
+// SUB-COMPONENTS
+// ============================================
 
-function ZoneTags({ tags }: { tags: string[] }) {
-  if (!tags || tags.length === 0) return null;
+function TabButton({ 
+  active, 
+  onClick, 
+  icon: Icon, 
+  label 
+}: { 
+  active: boolean; 
+  onClick: () => void; 
+  icon: React.ElementType; 
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+        active 
+          ? "bg-[#242526] text-[#e8e8e8]" 
+          : "text-[#6b6c6d] hover:text-[#9a9b9c] hover:bg-[#1e1f20]"
+      }`}
+    >
+      <Icon className="w-4 h-4" />
+      {label}
+    </button>
+  );
+}
+
+function PatternBadge({ name, confidence }: { name: string; confidence: string }) {
+  const confidenceColor = {
+    high: "bg-emerald-500/20 text-emerald-400",
+    medium: "bg-amber-500/20 text-amber-400",
+    low: "bg-rose-500/20 text-rose-400",
+  }[confidence] || "bg-[#2d2e2f] text-[#9a9b9c]";
   
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {tags.map((tag, i) => (
-        <span 
-          key={i}
-          className={`px-2 py-0.5 rounded-full text-xs font-medium ${TAG_COLORS[tag] || TAG_COLORS["Recent Consolidation"]}`}
-        >
-          {tag}
-        </span>
-      ))}
+    <div className="flex items-center gap-2">
+      <span className="px-3 py-1 rounded-lg bg-cyan-500/20 text-cyan-400 text-sm font-medium">
+        {name}
+      </span>
+      <span className={`px-2 py-0.5 rounded text-xs ${confidenceColor}`}>
+        {confidence} confidence
+      </span>
     </div>
   );
 }
 
-function CollapsibleSection({ 
-  title, 
-  children, 
-  defaultOpen = false,
-}: { 
-  title: string; 
-  children: React.ReactNode; 
-  defaultOpen?: boolean;
-}) {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
+function KeyLevel({ level }: { level: { price: number; label: string; type: string } }) {
+  const typeStyles = {
+    support: "border-emerald-500/30 bg-emerald-500/5",
+    resistance: "border-rose-500/30 bg-rose-500/5",
+    trendline: "border-cyan-500/30 bg-cyan-500/5",
+    pattern: "border-purple-500/30 bg-purple-500/5",
+  }[level.type] || "border-[#2d2e2f] bg-[#1a1b1b]";
+  
+  const typeColor = {
+    support: "text-emerald-400",
+    resistance: "text-rose-400",
+    trendline: "text-cyan-400",
+    pattern: "text-purple-400",
+  }[level.type] || "text-[#9a9b9c]";
   
   return (
-    <div className="border border-[#2d2e2f] rounded-xl overflow-hidden bg-[#1a1b1b]">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-[#1e1f20] transition-colors"
-      >
-        <span className="text-sm text-[#9a9b9c]">{title}</span>
-        <ChevronDown className={`w-4 h-4 text-[#6b6c6d] transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-      </button>
-      {isOpen && (
-        <div className="px-4 py-3 border-t border-[#2d2e2f] text-sm text-[#e8e8e8] leading-relaxed">
-          {children}
-        </div>
+    <div className={`flex items-center justify-between px-3 py-2 rounded-lg border ${typeStyles}`}>
+      <span className="text-sm text-[#e8e8e8]">{level.label}</span>
+      <span className={`font-mono text-sm ${typeColor}`}>${level.price.toLocaleString()}</span>
+    </div>
+  );
+}
+
+function BreakScenario({ scenario }: { scenario: { direction: string; trigger: string; target: number; targetReason: string; probability: string } }) {
+  const isUp = scenario.direction === "up";
+  const Icon = isUp ? ArrowUp : ArrowDown;
+  const color = isUp ? "emerald" : "rose";
+  const probLabel = {
+    higher: "More likely",
+    lower: "Less likely",
+    equal: "50/50",
+  }[scenario.probability] || scenario.probability;
+  
+  return (
+    <div className={`p-3 rounded-xl border border-${color}-500/20 bg-${color}-500/5`}>
+      <div className="flex items-center gap-2 mb-2">
+        <Icon className={`w-4 h-4 text-${color}-400`} />
+        <span className={`text-sm font-medium text-${color}-400`}>
+          Break {isUp ? "Up" : "Down"}
+        </span>
+        <span className={`text-xs px-2 py-0.5 rounded-full bg-${color}-500/20 text-${color}-400 ml-auto`}>
+          {probLabel}
+        </span>
+      </div>
+      <p className="text-xs text-[#9a9b9c] mb-2">{scenario.trigger}</p>
+      <div className="flex items-center justify-between text-sm">
+        <span className="text-[#6b6c6d]">Target</span>
+        <span className={`font-mono text-${color}-400`}>${scenario.target.toLocaleString()}</span>
+      </div>
+      {scenario.targetReason && (
+        <p className="text-xs text-[#6b6c6d] mt-1">{scenario.targetReason}</p>
       )}
     </div>
   );
 }
 
-// Copyable value component
 function CopyableValue({ label, value, reason }: { label: string; value: number; reason?: string }) {
   const [copied, setCopied] = useState(false);
   
@@ -133,8 +182,7 @@ function CopyableValue({ label, value, reason }: { label: string; value: number;
   );
 }
 
-// Scenario card with inline expansion
-function ScenarioCard({
+function TradeScenarioCard({
   type,
   scenario,
   zone,
@@ -275,7 +323,7 @@ function ScenarioCard({
   );
 }
 
-// User message bubble
+// User message
 function UserMessage({ content, image }: { content: string; image?: string }) {
   return (
     <div className="flex gap-3">
@@ -296,7 +344,7 @@ function UserMessage({ content, image }: { content: string; image?: string }) {
   );
 }
 
-// AI message with markdown
+// AI text message
 function AIMessage({ content, isLatest }: { content: string; isLatest?: boolean }) {
   return (
     <div className={`flex gap-3 ${isLatest ? 'animate-fade-in' : ''}`}>
@@ -335,188 +383,9 @@ function TypingIndicator() {
   );
 }
 
-// Rich AI Analysis Response (the structured analysis as a chat message)
-function AnalysisResponse({
-  analysis,
-  originalChart,
-  annotatedChart,
-  annotationStatus,
-}: {
-  analysis: ChartAnalysis;
-  originalChart: string;
-  annotatedChart: string | null;
-  annotationStatus: "loading" | "ready" | "failed";
-}) {
-  const [viewMode, setViewMode] = useState<"annotated" | "original">("annotated");
-  const [expandedScenario, setExpandedScenario] = useState<"short" | "long" | null>(null);
-  
-  const displayChart = viewMode === "annotated" && annotatedChart ? annotatedChart : originalChart;
-  const showAnnotated = viewMode === "annotated" && annotationStatus === "ready" && annotatedChart;
-  
-  const zoneDisplay = analysis.zone.high > 0 
-    ? `$${analysis.zone.low.toLocaleString()} – $${analysis.zone.high.toLocaleString()}`
-    : "See analysis";
-  
-  const hasChopRisk = analysis.zoneTags?.some(tag => 
-    tag.toLowerCase().includes("mid-range") || tag.toLowerCase().includes("chop")
-  );
-
-  // Fallback for raw analysis
-  if (analysis.rawAnalysis) {
-    return (
-      <div className="flex gap-3">
-        <div className="w-8 h-8 rounded-full bg-cyan-500/10 flex items-center justify-center flex-shrink-0">
-          <Sparkles className="w-4 h-4 text-cyan-400" />
-        </div>
-        <div className="flex-1 min-w-0 pt-1">
-          <img src={`data:image/png;base64,${originalChart}`} alt="Chart" className="max-w-full rounded-xl border border-[#2d2e2f] mb-3" />
-          <p className="text-sm text-[#e8e8e8] whitespace-pre-wrap">{analysis.rawAnalysis}</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex gap-3">
-      <div className="w-8 h-8 rounded-full bg-cyan-500/10 flex items-center justify-center flex-shrink-0">
-        <Sparkles className="w-4 h-4 text-cyan-400" />
-      </div>
-      <div className="flex-1 min-w-0 pt-1 space-y-4">
-        {/* Zone header */}
-        <div>
-          <div className="text-sm text-[#e8e8e8] mb-2">
-            <span className="text-[#6b6c6d]">{analysis.zone.label}:</span>{" "}
-            <span className="text-cyan-400 font-mono font-medium">{zoneDisplay}</span>
-          </div>
-          {analysis.zoneTags && <ZoneTags tags={analysis.zoneTags} />}
-        </div>
-
-        {/* Chart */}
-        <div className="rounded-xl border border-[#2d2e2f] overflow-hidden bg-[#161717]">
-          <div className="px-3 py-2 flex items-center justify-between border-b border-[#2d2e2f]">
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setViewMode("annotated")}
-                disabled={annotationStatus === "loading"}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
-                  viewMode === "annotated"
-                    ? annotationStatus === "loading" ? "bg-cyan-500/10 text-cyan-400/60"
-                      : annotationStatus === "ready" ? "bg-cyan-500/20 text-cyan-400"
-                        : "bg-[#242526] text-[#6b6c6d]"
-                    : "text-[#6b6c6d] hover:text-[#9a9b9c]"
-                }`}
-              >
-                {annotationStatus === "loading" ? <Loader2 className="w-3 h-3 animate-spin" /> : <Eye className="w-3 h-3" />}
-                Annotated
-              </button>
-              <button
-                onClick={() => setViewMode("original")}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
-                  viewMode === "original" ? "bg-[#242526] text-[#e8e8e8]" : "text-[#6b6c6d] hover:text-[#9a9b9c]"
-                }`}
-              >
-                <EyeOff className="w-3 h-3" />Original
-              </button>
-            </div>
-            {showAnnotated && (
-              <div className="text-xs text-cyan-400 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />Levels drawn
-              </div>
-            )}
-          </div>
-          <div className="relative">
-            {annotationStatus === "loading" && viewMode === "annotated" && (
-              <div className="absolute inset-0 flex items-center justify-center bg-[#161717]/80 backdrop-blur-sm z-10">
-                <div className="flex items-center gap-2">
-                  <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
-                  <span className="text-sm text-cyan-400">Drawing levels...</span>
-                </div>
-              </div>
-            )}
-            <img 
-              src={`data:image/png;base64,${displayChart}`} 
-              alt="Chart" 
-              className={`w-full ${showAnnotated ? "shadow-[0_0_30px_rgba(6,182,212,0.1)]" : ""}`}
-            />
-          </div>
-        </div>
-
-        {/* Status */}
-        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm ${
-          analysis.status === "below_zone" ? "bg-rose-500/10 text-rose-400" :
-          analysis.status === "above_zone" ? "bg-emerald-500/10 text-emerald-400" :
-          analysis.status === "at_zone" ? "bg-cyan-500/10 text-cyan-400" :
-          "bg-amber-500/10 text-amber-400"
-        }`}>
-          {analysis.status === "below_zone" ? <TrendingDown className="w-4 h-4" /> :
-           analysis.status === "above_zone" ? <TrendingUp className="w-4 h-4" /> :
-           analysis.status === "at_zone" ? <Zap className="w-4 h-4" /> :
-           <Clock className="w-4 h-4" />}
-          {analysis.statusText}
-        </div>
-
-        {/* Scenarios */}
-        <div className="flex gap-2">
-          <ScenarioCard 
-            type="short" 
-            scenario={analysis.shortScenario} 
-            zone={analysis.zone} 
-            isExpanded={expandedScenario === "short"} 
-            onToggle={() => setExpandedScenario(expandedScenario === "short" ? null : "short")} 
-            otherExpanded={expandedScenario === "long"} 
-          />
-          <ScenarioCard 
-            type="long" 
-            scenario={analysis.longScenario} 
-            zone={analysis.zone} 
-            isExpanded={expandedScenario === "long"} 
-            onToggle={() => setExpandedScenario(expandedScenario === "long" ? null : "long")} 
-            otherExpanded={expandedScenario === "short"} 
-          />
-        </div>
-
-        {/* Collapsible sections */}
-        <div className="space-y-2">
-          {analysis.reasoning && (
-            <CollapsibleSection title="Why this zone matters" defaultOpen={false}>
-              {analysis.reasoning}
-            </CollapsibleSection>
-          )}
-          
-          {analysis.skipConditions && analysis.skipConditions.length > 0 && (
-            <CollapsibleSection title="When to skip this zone" defaultOpen={hasChopRisk}>
-              <ul className="space-y-1.5">
-                {analysis.skipConditions.map((condition, i) => (
-                  <li key={i} className="flex items-start gap-2 text-[#9a9b9c]">
-                    <Ban className="w-3.5 h-3.5 text-amber-400 mt-0.5 flex-shrink-0" />{condition}
-                  </li>
-                ))}
-              </ul>
-            </CollapsibleSection>
-          )}
-        </div>
-
-        {/* Bias */}
-        {analysis.biasReason && (
-          <div className="flex items-center gap-2 text-xs text-[#6b6c6d]">
-            <span>Lean:</span>
-            <span className={`font-medium ${
-              analysis.bias === "lean_bullish" ? "text-emerald-400" : 
-              analysis.bias === "lean_bearish" ? "text-rose-400" : 
-              "text-[#9a9b9c]"
-            }`}>
-              {analysis.bias === "lean_bullish" ? "↑ Bullish" : 
-               analysis.bias === "lean_bearish" ? "↓ Bearish" : 
-               "⟷ Neutral"}
-            </span>
-            <span>—</span>
-            <span className="text-[#9a9b9c]">{analysis.biasReason}</span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+// ============================================
+// MAIN COMPONENT
+// ============================================
 
 export function ChartAnalystCard({
   analysis,
@@ -526,6 +395,10 @@ export function ChartAnalystCard({
   userPrompt,
   onClose,
 }: ChartAnalystCardProps) {
+  const [activeTab, setActiveTab] = useState<"analysis" | "trade">("analysis");
+  const [viewMode, setViewMode] = useState<"annotated" | "original">("annotated");
+  const [expandedScenario, setExpandedScenario] = useState<"short" | "long" | null>(null);
+  
   // Chat state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
@@ -535,47 +408,42 @@ export function ChartAnalystCard({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const zoneDisplay = analysis.zone.high > 0 
-    ? `$${analysis.zone.low.toLocaleString()} – $${analysis.zone.high.toLocaleString()}`
-    : "the identified zone";
+  const displayChart = viewMode === "annotated" && annotatedChart ? annotatedChart : originalChart;
+  const showAnnotated = viewMode === "annotated" && annotationStatus === "ready" && annotatedChart;
 
-  // Build system context
-  const systemContext = `You are a trading assistant. Context from the chart analysis:
+  // Build context for follow-up chat
+  const systemContext = `You are a trading assistant. You previously analyzed a chart and identified:
 
-Zone: ${analysis.zone.label} at ${zoneDisplay}
-Tags: ${analysis.zoneTags?.join(", ") || "None"}
-Status: ${analysis.statusText}
-Bias: ${analysis.bias} - ${analysis.biasReason || ""}
-Short scenario: Stop $${analysis.shortScenario.stopLoss}, targets $${analysis.shortScenario.target1} and $${analysis.shortScenario.target2}
-Long scenario: Stop $${analysis.longScenario.stopLoss}, targets $${analysis.longScenario.target1} and $${analysis.longScenario.target2}
+Pattern: ${analysis.pattern?.name || "No clear pattern"}
+${analysis.pattern?.description || ""}
 
-Keep responses concise and actionable. Reference the zone and scenarios when relevant. The user may paste new charts showing updated price action.`;
+Key levels: ${analysis.keyLevels?.map(l => `${l.label} at $${l.price}`).join(", ") || "None identified"}
+
+${analysis.interpretation?.forThisChart || ""}
+
+The user may ask follow-up questions or share new charts. Be helpful, concise, and reference your previous analysis when relevant.`;
 
   // Auto-scroll
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages, isTyping]);
 
-  // Focus input on mount
+  // Focus input
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  // Handle paste
+  // Handlers
   const handlePaste = (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
     if (!items) return;
-
     for (const item of items) {
       if (item.type.startsWith("image/")) {
         e.preventDefault();
         const file = item.getAsFile();
         if (file) {
           const reader = new FileReader();
-          reader.onload = () => {
-            const base64 = (reader.result as string).split(",")[1];
-            setChatImage(base64);
-          };
+          reader.onload = () => setChatImage((reader.result as string).split(",")[1]);
           reader.readAsDataURL(file);
         }
         break;
@@ -583,20 +451,15 @@ Keep responses concise and actionable. Reference the zone and scenarios when rel
     }
   };
 
-  // Handle file upload
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file && file.type.startsWith("image/")) {
+    if (file?.type.startsWith("image/")) {
       const reader = new FileReader();
-      reader.onload = () => {
-        const base64 = (reader.result as string).split(",")[1];
-        setChatImage(base64);
-      };
+      reader.onload = () => setChatImage((reader.result as string).split(",")[1]);
       reader.readAsDataURL(file);
     }
   };
 
-  // Send message
   const handleSend = async () => {
     if ((!inputValue.trim() && !chatImage) || isTyping) return;
     
@@ -611,20 +474,15 @@ Keep responses concise and actionable. Reference the zone and scenarios when rel
     setChatImage(null);
     setIsTyping(true);
     
-    // Include original chart context
     const messagesWithContext: ChatMessage[] = [
-      { role: "user", content: "Here is the chart I'm analyzing:", image: originalChart },
-      { role: "model", content: "I see the chart and have provided my analysis with the key zone and scenarios." },
+      { role: "user", content: "Here is the chart:", image: originalChart },
+      { role: "model", content: analysis.conversationalResponse || "I analyzed the chart." },
       ...newMessages
     ];
     
     try {
       const response = await chatWithHistory(messagesWithContext, systemContext);
-      if (response.success) {
-        setChatMessages([...newMessages, { role: "model", content: response.text }]);
-      } else {
-        setChatMessages([...newMessages, { role: "model", content: "Sorry, I couldn't process that. Please try again." }]);
-      }
+      setChatMessages([...newMessages, { role: "model", content: response.success ? response.text : "Sorry, I couldn't process that." }]);
     } catch {
       setChatMessages([...newMessages, { role: "model", content: "Something went wrong. Please try again." }]);
     } finally {
@@ -643,7 +501,7 @@ Keep responses concise and actionable. Reference the zone and scenarios when rel
     <div className="bg-[#1e1f20] border border-[#2d2e2f] rounded-2xl overflow-hidden animate-slide-up flex flex-col max-h-[85vh]">
       {/* Header */}
       <div className="px-5 py-3 border-b border-[#2d2e2f] flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <div className="w-2 h-2 rounded-full bg-cyan-400" />
           <span className="text-sm font-medium text-[#e8e8e8]">Chart Analysis</span>
         </div>
@@ -654,16 +512,220 @@ Keep responses concise and actionable. Reference the zone and scenarios when rel
 
       {/* Conversation */}
       <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
-        {/* User's original message */}
+        {/* User's question */}
         <UserMessage content={userPrompt || "Analyze this chart"} image={originalChart} />
         
-        {/* AI's structured analysis response */}
-        <AnalysisResponse 
-          analysis={analysis}
-          originalChart={originalChart}
-          annotatedChart={annotatedChart}
-          annotationStatus={annotationStatus}
-        />
+        {/* AI's conversational response */}
+        <div className="flex gap-3">
+          <div className="w-8 h-8 rounded-full bg-cyan-500/10 flex items-center justify-center flex-shrink-0">
+            <Sparkles className="w-4 h-4 text-cyan-400" />
+          </div>
+          <div className="flex-1 min-w-0 pt-1 space-y-4">
+            {/* Direct answer to their question */}
+            <div className="text-sm text-[#e8e8e8] leading-relaxed">
+              {analysis.conversationalResponse || analysis.rawAnalysis || "I analyzed the chart."}
+            </div>
+            
+            {/* Tabs */}
+            <div className="flex items-center gap-1 p-1 bg-[#1a1b1b] rounded-xl w-fit">
+              <TabButton 
+                active={activeTab === "analysis"} 
+                onClick={() => setActiveTab("analysis")}
+                icon={BookOpen}
+                label="Pattern Analysis"
+              />
+              <TabButton 
+                active={activeTab === "trade"} 
+                onClick={() => setActiveTab("trade")}
+                icon={Target}
+                label="Trade Setup"
+              />
+            </div>
+            
+            {/* Tab Content */}
+            {activeTab === "analysis" ? (
+              <div className="space-y-4">
+                {/* Pattern info */}
+                {analysis.pattern?.name && analysis.pattern.name !== "No Clear Pattern" && (
+                  <div className="space-y-3">
+                    <PatternBadge name={analysis.pattern.name} confidence={analysis.pattern.confidence} />
+                    <p className="text-sm text-[#9a9b9c]">{analysis.pattern.description}</p>
+                  </div>
+                )}
+                
+                {/* Chart */}
+                <div className="rounded-xl border border-[#2d2e2f] overflow-hidden bg-[#161717]">
+                  <div className="px-3 py-2 flex items-center justify-between border-b border-[#2d2e2f]">
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setViewMode("annotated")}
+                        disabled={annotationStatus === "loading"}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                          viewMode === "annotated"
+                            ? annotationStatus === "loading" ? "bg-cyan-500/10 text-cyan-400/60"
+                              : annotationStatus === "ready" ? "bg-cyan-500/20 text-cyan-400"
+                                : "bg-[#242526] text-[#6b6c6d]"
+                            : "text-[#6b6c6d] hover:text-[#9a9b9c]"
+                        }`}
+                      >
+                        {annotationStatus === "loading" ? <Loader2 className="w-3 h-3 animate-spin" /> : <Eye className="w-3 h-3" />}
+                        Annotated
+                      </button>
+                      <button
+                        onClick={() => setViewMode("original")}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                          viewMode === "original" ? "bg-[#242526] text-[#e8e8e8]" : "text-[#6b6c6d] hover:text-[#9a9b9c]"
+                        }`}
+                      >
+                        <EyeOff className="w-3 h-3" />Original
+                      </button>
+                    </div>
+                    {showAnnotated && (
+                      <div className="text-xs text-cyan-400 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />Pattern drawn
+                      </div>
+                    )}
+                  </div>
+                  <div className="relative">
+                    {annotationStatus === "loading" && viewMode === "annotated" && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-[#161717]/80 backdrop-blur-sm z-10">
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
+                          <span className="text-sm text-cyan-400">Drawing pattern...</span>
+                        </div>
+                      </div>
+                    )}
+                    <img src={`data:image/png;base64,${displayChart}`} alt="Chart" className="w-full" />
+                  </div>
+                </div>
+                
+                {/* Key Levels */}
+                {analysis.keyLevels && analysis.keyLevels.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-xs text-[#6b6c6d] uppercase tracking-wide">Key Levels</div>
+                    <div className="space-y-1.5">
+                      {analysis.keyLevels.map((level, i) => (
+                        <KeyLevel key={i} level={level} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Interpretation */}
+                {analysis.interpretation && (
+                  <div className="p-4 rounded-xl bg-[#1a1b1b] border border-[#2d2e2f] space-y-3">
+                    <div className="flex items-center gap-2">
+                      <HelpCircle className="w-4 h-4 text-cyan-400" />
+                      <span className="text-sm font-medium text-[#e8e8e8]">What This Means</span>
+                    </div>
+                    {analysis.interpretation.typical && (
+                      <p className="text-sm text-[#9a9b9c]">
+                        <strong className="text-[#e8e8e8]">Typically:</strong> {analysis.interpretation.typical}
+                      </p>
+                    )}
+                    {analysis.interpretation.forThisChart && (
+                      <p className="text-sm text-[#9a9b9c]">
+                        <strong className="text-[#e8e8e8]">For this chart:</strong> {analysis.interpretation.forThisChart}
+                      </p>
+                    )}
+                  </div>
+                )}
+                
+                {/* Break Scenarios */}
+                {analysis.breakScenarios && analysis.breakScenarios.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-xs text-[#6b6c6d] uppercase tracking-wide">Potential Outcomes</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {analysis.breakScenarios.map((scenario, i) => (
+                        <BreakScenario key={i} scenario={scenario} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Trade Setup Tab */
+              <div className="space-y-4">
+                {/* Zone info */}
+                {analysis.zone?.high > 0 && (
+                  <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-[#9a9b9c]">{analysis.zone.label}</span>
+                      <span className="text-sm font-mono text-cyan-400">
+                        ${analysis.zone.low.toLocaleString()} – ${analysis.zone.high.toLocaleString()}
+                      </span>
+                    </div>
+                    {analysis.zoneTags && analysis.zoneTags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {analysis.zoneTags.map((tag, i) => (
+                          <span key={i} className="px-2 py-0.5 rounded-full text-xs bg-[#2d2e2f] text-[#9a9b9c]">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {/* Status */}
+                {analysis.statusText && (
+                  <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm ${
+                    analysis.status === "below_zone" ? "bg-rose-500/10 text-rose-400" :
+                    analysis.status === "above_zone" ? "bg-emerald-500/10 text-emerald-400" :
+                    analysis.status === "at_zone" ? "bg-cyan-500/10 text-cyan-400" :
+                    "bg-amber-500/10 text-amber-400"
+                  }`}>
+                    <Zap className="w-4 h-4" />
+                    {analysis.statusText}
+                  </div>
+                )}
+                
+                {/* Why this zone */}
+                {analysis.reasoning && (
+                  <p className="text-sm text-[#9a9b9c]">{analysis.reasoning}</p>
+                )}
+                
+                {/* Trade Scenarios */}
+                <div className="flex gap-2">
+                  <TradeScenarioCard 
+                    type="short" 
+                    scenario={analysis.shortScenario} 
+                    zone={analysis.zone} 
+                    isExpanded={expandedScenario === "short"} 
+                    onToggle={() => setExpandedScenario(expandedScenario === "short" ? null : "short")} 
+                    otherExpanded={expandedScenario === "long"} 
+                  />
+                  <TradeScenarioCard 
+                    type="long" 
+                    scenario={analysis.longScenario} 
+                    zone={analysis.zone} 
+                    isExpanded={expandedScenario === "long"} 
+                    onToggle={() => setExpandedScenario(expandedScenario === "long" ? null : "long")} 
+                    otherExpanded={expandedScenario === "short"} 
+                  />
+                </div>
+                
+                {/* Bias */}
+                {analysis.biasReason && (
+                  <div className="flex items-center gap-2 text-xs text-[#6b6c6d]">
+                    <span>Lean:</span>
+                    <span className={`font-medium ${
+                      analysis.bias === "lean_bullish" ? "text-emerald-400" : 
+                      analysis.bias === "lean_bearish" ? "text-rose-400" : 
+                      "text-[#9a9b9c]"
+                    }`}>
+                      {analysis.bias === "lean_bullish" ? "↑ Bullish" : 
+                       analysis.bias === "lean_bearish" ? "↓ Bearish" : 
+                       "⟷ Neutral"}
+                    </span>
+                    <span>—</span>
+                    <span className="text-[#9a9b9c]">{analysis.biasReason}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
         
         {/* Follow-up messages */}
         {chatMessages.map((msg, i) => (
@@ -681,14 +743,9 @@ Keep responses concise and actionable. Reference the zone and scenarios when rel
 
       {/* Input */}
       <div className="border-t border-[#2d2e2f] p-4 flex-shrink-0 bg-[#1a1b1b]">
-        {/* Image preview */}
         {chatImage && (
           <div className="mb-3 relative inline-block">
-            <img 
-              src={`data:image/png;base64,${chatImage}`}
-              alt="Chart"
-              className="h-20 rounded-lg border border-[#2d2e2f]"
-            />
+            <img src={`data:image/png;base64,${chatImage}`} alt="Chart" className="h-20 rounded-lg border border-[#2d2e2f]" />
             <button
               onClick={() => setChatImage(null)}
               className="absolute -top-2 -right-2 p-1 bg-[#242526] border border-[#2d2e2f] rounded-full hover:bg-rose-500/20 transition-colors"
@@ -699,18 +756,11 @@ Keep responses concise and actionable. Reference the zone and scenarios when rel
         )}
         
         <div className="flex items-end gap-2">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleFileUpload}
-            className="hidden"
-          />
+          <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
           
           <button
             onClick={() => fileInputRef.current?.click()}
             className="p-2.5 rounded-xl bg-[#242526] hover:bg-[#2d2e2f] text-[#6b6c6d] hover:text-[#9a9b9c] transition-colors flex-shrink-0"
-            title="Upload chart"
           >
             <Plus className="w-5 h-5" />
           </button>
@@ -722,9 +772,9 @@ Keep responses concise and actionable. Reference the zone and scenarios when rel
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              placeholder="Ask a follow-up or paste a chart..."
+              placeholder="Ask a follow-up or paste a new chart..."
               rows={1}
-              className="w-full bg-[#242526] border border-[#2d2e2f] rounded-xl text-[#e8e8e8] placeholder-[#6b6c6d] px-4 py-3 pr-12 resize-none focus:outline-none focus:border-[#3d3e3f] transition-colors text-sm leading-relaxed"
+              className="w-full bg-[#242526] border border-[#2d2e2f] rounded-xl text-[#e8e8e8] placeholder-[#6b6c6d] px-4 py-3 resize-none focus:outline-none focus:border-[#3d3e3f] transition-colors text-sm"
               style={{ minHeight: "48px", maxHeight: "120px" }}
             />
           </div>
