@@ -514,32 +514,8 @@ export function RouterPage() {
 
   return (
     <div className="flex h-screen bg-[#191a1a]">
-      {/* Sidebar with portfolio */}
-      <Sidebar>
-        <div className="p-3 border-b border-[#2d2e2f]">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-[#6b6c6d] uppercase tracking-wider">Portfolio</span>
-            <span className="text-xs text-[#6b6c6d]">{portfolio.length} active</span>
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto p-3 space-y-2">
-          {portfolio.length === 0 ? (
-            <div className="text-center py-8 text-xs text-[#6b6c6d]">
-              No positions yet
-            </div>
-          ) : (
-            portfolio.map((plan, index) => (
-              <TradeCard
-                key={plan.id}
-                plan={plan}
-                index={index}
-                onRemove={() => handleRemove(plan.id)}
-                onLockRisk={'leverage' in plan ? () => handleLockRisk(plan.id) : undefined}
-              />
-            ))
-          )}
-        </div>
-      </Sidebar>
+      {/* Slim sidebar */}
+      <Sidebar />
 
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -771,6 +747,37 @@ export function RouterPage() {
               </div>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Portfolio panel - right side */}
+      <div className="hidden lg:flex w-80 flex-shrink-0 flex-col border-l border-[#2d2e2f] bg-[#1a1b1b]">
+        <div className="p-4 border-b border-[#2d2e2f]">
+          <div className="flex items-center justify-between">
+            <span className="font-medium text-[#e8e8e8]">Portfolio</span>
+            <span className="text-xs text-[#6b6c6d]">{portfolio.length} active</span>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {portfolio.length === 0 ? (
+            <div className="text-center py-12 text-sm text-[#6b6c6d]">
+              <div className="mb-2">No positions yet</div>
+              <div className="text-xs">Type a view to get started</div>
+            </div>
+          ) : (
+            portfolio.map((plan, index) => (
+              <TradeCard
+                key={plan.id}
+                plan={plan}
+                index={index}
+                onRemove={() => handleRemove(plan.id)}
+                onLockRisk={'leverage' in plan ? () => handleLockRisk(plan.id) : undefined}
+              />
+            ))
+          )}
+        </div>
+        <div className="p-3 border-t border-[#2d2e2f] text-center">
+          <div className="text-xs text-[#6b6c6d]">Demo • No real trades</div>
         </div>
       </div>
 
