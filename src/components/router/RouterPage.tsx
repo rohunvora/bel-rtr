@@ -1,13 +1,15 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { ArrowUp, Coins, Vote, Building2, Wifi, WifiOff, Target, Layers, Sparkles, Clock, X } from "lucide-react";
+import { ArrowUp, Coins, Vote, Building2, Wifi, WifiOff, Target, Layers, Sparkles, Clock, X, Image as ImageIcon, Loader2 } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
 import { TradePlanCard, TwapPlanCard } from "./TradePlanCard";
 import { TradeCard } from "./TradeCard";
 import { LockRiskModal } from "./LockRiskModal";
 import { ThinkingIndicator, getThinkingText } from "./ThinkingIndicator";
 import { PredictionCard, StockCard, ThesisExplorerCard, TargetTradeCard, PortfolioActionCard } from "./modals";
+import { AIResponseCard } from "./AIResponseCard";
+import { analyzeChart, fileToBase64 } from "@/lib/gemini";
 import { ToastContainer, ToastMessage } from "@/components/Toast";
 import { FlashingPrice } from "@/components/AnimatedPrice";
 import { SparklineInline } from "@/components/Sparkline";
@@ -60,7 +62,9 @@ type ModalState =
   | { type: "stock"; ticker: string; company: string; price: number; thesis: string; prompt: string }
   | { type: "thesis"; thesis: string; sentiment: "bullish" | "bearish"; prompt: string }
   | { type: "target"; symbol: string; targetPrice: number; deadline?: string; prompt: string }
-  | { type: "portfolio_action"; action: "reduce" | "hedge" | "close_all"; prompt: string };
+  | { type: "portfolio_action"; action: "reduce" | "hedge" | "close_all"; prompt: string }
+  | { type: "ai_response"; response: string; image?: string; prompt: string }
+  | { type: "ai_loading"; prompt: string };
 
 // Rich examples showing variety
 const EXAMPLES = [
@@ -165,6 +169,7 @@ function createTradePlan(
 export function RouterPage() {
   const { prices, isConnected } = useLivePrices();
   const [input, setInput] = useState("");
+  const [pastedImage, setPastedImage] = useState<string | null>(null); // base64
   const [modalState, setModalState] = useState<ModalState>({ type: "none" });
   const [portfolio, setPortfolio] = usePersistedState<AnyPlan[]>("router_portfolio", []);
   const [lockTarget, setLockTarget] = useState<TradePlan | null>(null);
@@ -172,6 +177,7 @@ export function RouterPage() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [initialized, setInitialized] = useState(false);
   const [showOnboarding, dismissOnboarding] = useOnboarding();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
@@ -218,8 +224,69 @@ export function RouterPage() {
     setModalState(result);
   }, []);
 
+  // Handle image paste
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          fileToBase64(file).then((base64) => {
+            setPastedImage(base64);
+          });
+        }
+        break;
+      }
+    }
+  }, []);
+
+  // Handle file upload
+  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && file.type.startsWith("image/")) {
+      fileToBase64(file).then((base64) => {
+        setPastedImage(base64);
+      });
+    }
+  }, []);
+
+  // Process image with Gemini
+  const processImageWithAI = useCallback(async (imageBase64: string, prompt: string) => {
+    setModalState({ type: "ai_loading", prompt });
+    setInput("");
+    setPastedImage(null);
+
+    try {
+      const result = await analyzeChart(imageBase64, prompt || undefined);
+      
+      if (result.success) {
+        setModalState({ 
+          type: "ai_response", 
+          response: result.text, 
+          image: imageBase64,
+          prompt 
+        });
+      } else {
+        addToast("error", "Analysis failed", result.error);
+        setModalState({ type: "none" });
+      }
+    } catch (error) {
+      addToast("error", "Failed to analyze", "Please try again");
+      setModalState({ type: "none" });
+    }
+  }, [addToast]);
+
   // Intent detection with thinking state
   const processInput = useCallback((text: string) => {
+    // If there's a pasted image, analyze it with Gemini
+    if (pastedImage) {
+      processImageWithAI(pastedImage, text);
+      return;
+    }
+
     const lower = text.toLowerCase();
 
     // Detect intent type first
@@ -358,7 +425,10 @@ export function RouterPage() {
   }, [prices, addToast, showResult]);
 
   const handleSubmit = () => {
-    if (input.trim()) {
+    if (pastedImage) {
+      // If there's an image, analyze it (even with empty prompt)
+      processImageWithAI(pastedImage, input.trim() || "Analyze this chart");
+    } else if (input.trim()) {
       processInput(input.trim());
     }
   };
@@ -515,10 +585,10 @@ export function RouterPage() {
   return (
     <div className="flex h-screen bg-[#191a1a]">
       {/* Slim sidebar */}
-      <Sidebar />
+      <Sidebar isCollapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'lg:pl-0' : ''}`}>
         {/* Header with live prices */}
         <header className="h-14 border-b border-[#2d2e2f] flex items-center justify-between px-6">
           <h1 className="text-[#e8e8e8] font-medium">Trade</h1>
@@ -586,6 +656,25 @@ export function RouterPage() {
                 )}
                 
                 <div className="bg-[#1e1f20] border border-[#2d2e2f] rounded-xl overflow-hidden focus-within:border-[#3d3e3f] transition-colors hover-glow">
+                  {/* Image preview */}
+                  {pastedImage && (
+                    <div className="px-4 pt-3 pb-2">
+                      <div className="relative inline-block">
+                        <img 
+                          src={`data:image/png;base64,${pastedImage}`} 
+                          alt="Pasted chart" 
+                          className="max-h-32 rounded-lg border border-[#2d2e2f]"
+                        />
+                        <button
+                          onClick={() => setPastedImage(null)}
+                          className="absolute -top-2 -right-2 p-1 bg-[#2d2e2f] hover:bg-[#3d3e3f] rounded-full"
+                        >
+                          <X className="w-3 h-3 text-[#9a9b9c]" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  
                   <textarea
                     ref={textareaRef}
                     value={input}
@@ -594,17 +683,30 @@ export function RouterPage() {
                       if (showOnboarding) dismissOnboarding();
                     }}
                     onKeyDown={handleKeyDown}
+                    onPaste={handlePaste}
                     onFocus={() => showOnboarding && dismissOnboarding()}
-                    placeholder="BTC is going to dump... ETH to 5000 by March... Lakers win tonight..."
+                    placeholder={pastedImage ? "What would you like to know about this chart?" : "BTC is going to dump... or paste a chart image..."}
                     rows={1}
-                    className="w-full bg-transparent text-[#e8e8e8] placeholder-[#4a4b4c] px-4 py-3.5 pr-14 resize-none focus:outline-none"
+                    className="w-full bg-transparent text-[#e8e8e8] placeholder-[#4a4b4c] px-4 py-3.5 pr-24 resize-none focus:outline-none"
                     style={{ minHeight: "52px" }}
                   />
+                  
+                  {/* Upload button */}
+                  <label className="absolute right-14 bottom-2.5 p-2.5 rounded-lg transition-all cursor-pointer hover:bg-[#2d2e2f] text-[#6b6c6d] hover:text-[#9a9b9c]">
+                    <ImageIcon className="w-4 h-4" />
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+                  
                   <button
                     onClick={handleSubmit}
-                    disabled={!input.trim()}
+                    disabled={!input.trim() && !pastedImage}
                     className={`absolute right-2.5 bottom-2.5 p-2.5 rounded-lg transition-all btn-press ${
-                      input.trim() ? "bg-[#20b2aa] hover:bg-[#2cc5bc] text-white" : "bg-[#2d2e2f] text-[#4a4b4c]"
+                      (input.trim() || pastedImage) ? "bg-[#20b2aa] hover:bg-[#2cc5bc] text-white" : "bg-[#2d2e2f] text-[#4a4b4c]"
                     }`}
                   >
                     <ArrowUp className="w-4 h-4" />
@@ -646,6 +748,34 @@ export function RouterPage() {
               <div ref={resultsRef}>
                 <ThinkingIndicator 
                   {...getThinkingText(modalState.intentType, modalState.prompt)} 
+                />
+              </div>
+            )}
+
+            {/* AI Loading state */}
+            {modalState.type === "ai_loading" && (
+              <div ref={resultsRef}>
+                <div className="bg-[#1e1f20] border border-[#2d2e2f] rounded-2xl p-8">
+                  <div className="flex flex-col items-center text-center">
+                    <div className="relative mb-4">
+                      <div className="w-12 h-12 rounded-xl bg-purple-500/10 flex items-center justify-center">
+                        <Loader2 className="w-6 h-6 text-purple-400 animate-spin" />
+                      </div>
+                    </div>
+                    <div className="text-[#e8e8e8] font-medium mb-1">Analyzing chart...</div>
+                    <div className="text-sm text-[#6b6c6d]">Finding support, resistance, and patterns</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* AI Response */}
+            {modalState.type === "ai_response" && (
+              <div ref={resultsRef}>
+                <AIResponseCard 
+                  response={modalState.response}
+                  image={modalState.image}
+                  onClose={clearModal}
                 />
               </div>
             )}

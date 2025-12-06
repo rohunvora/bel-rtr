@@ -1,9 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Zap, LayoutDashboard, Settings, HelpCircle, Menu, X } from "lucide-react";
+import { Zap, LayoutDashboard, Settings, HelpCircle, Menu, X, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
-export function Sidebar() {
+interface SidebarProps {
+  isCollapsed?: boolean;
+  onToggle?: () => void;
+}
+
+export function Sidebar({ isCollapsed = false, onToggle }: SidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
@@ -24,12 +29,24 @@ export function Sidebar() {
         />
       )}
 
+      {/* Collapsed toggle button - shows when sidebar is collapsed on desktop */}
+      {isCollapsed && (
+        <button
+          onClick={onToggle}
+          className="hidden lg:flex fixed top-4 left-4 z-50 p-2 bg-[#1e1f20] border border-[#2d2e2f] rounded-lg hover:bg-[#242526] transition-colors items-center justify-center"
+          title="Expand sidebar"
+        >
+          <PanelLeftOpen className="w-5 h-5 text-[#e8e8e8]" />
+        </button>
+      )}
+
       {/* Sidebar */}
       <div className={`
         fixed lg:relative inset-y-0 left-0 z-50
         w-16 h-screen bg-[#1a1b1b] border-r border-[#2d2e2f] flex flex-col
-        transform transition-transform duration-300 ease-out
+        transform transition-all duration-300 ease-out
         ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        ${isCollapsed ? 'lg:-translate-x-full lg:w-0 lg:border-r-0' : ''}
       `}>
         {/* Logo */}
         <div className="p-3 flex justify-center border-b border-[#2d2e2f]">
@@ -44,6 +61,15 @@ export function Sidebar() {
           <NavItem icon={Settings} label="Settings" disabled />
           <NavItem icon={HelpCircle} label="Help" disabled />
         </nav>
+
+        {/* Collapse button - desktop only */}
+        <button
+          onClick={onToggle}
+          className="hidden lg:flex p-3 border-t border-[#2d2e2f] justify-center hover:bg-[#242526] transition-colors"
+          title="Collapse sidebar"
+        >
+          <PanelLeftClose className="w-5 h-5 text-[#6b6c6d] hover:text-[#e8e8e8] transition-colors" />
+        </button>
 
         {/* Mobile close button */}
         <button
