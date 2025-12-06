@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Compass, TrendingUp, TrendingDown, ExternalLink, Sparkles, ChevronRight, Coins, BarChart3, Vote } from "lucide-react";
-import { formatCurrency } from "@/lib/router-types";
+import { Check, Compass, TrendingUp, TrendingDown, Sparkles, ChevronRight, Lightbulb } from "lucide-react";
 import { useLivePrices } from "@/lib/use-live-prices";
 import { FlashingPrice } from "@/components/AnimatedPrice";
 
@@ -25,31 +24,10 @@ interface ThesisExplorerCardProps {
   onCancel: () => void;
 }
 
-const TYPE_ICONS = {
-  perp: Coins,
-  spot: BarChart3,
-  prediction: Vote,
-  etf: BarChart3,
-};
-
-const TYPE_LABELS = {
-  perp: "Perpetual",
-  spot: "Spot",
-  prediction: "Prediction Market",
-  etf: "ETF",
-};
-
 export function ThesisExplorerCard({ thesis, sentiment, instruments, onSelect, onCancel }: ThesisExplorerCardProps) {
   const { prices } = useLivePrices();
   const [selectedInstrument, setSelectedInstrument] = useState<Instrument | null>(null);
   const [confirmed, setConfirmed] = useState(false);
-
-  // Group instruments by type
-  const groupedInstruments = instruments.reduce((acc, inst) => {
-    if (!acc[inst.type]) acc[inst.type] = [];
-    acc[inst.type].push(inst);
-    return acc;
-  }, {} as Record<string, Instrument[]>);
 
   const handleSelect = () => {
     if (!selectedInstrument) return;
@@ -59,128 +37,119 @@ export function ThesisExplorerCard({ thesis, sentiment, instruments, onSelect, o
     }, 500);
   };
 
+  // Generate insight based on thesis
+  const insight = sentiment === "bearish" && thesis.toLowerCase().includes("ai")
+    ? "AI stocks have rallied 180% since ChatGPT launched. If the hype fades, these names have the most downside."
+    : thesis.toLowerCase().includes("weight loss")
+    ? "GLP-1 drugs are projected to be a $100B+ market by 2030. These companies are best positioned to capture it."
+    : "Here are the most direct ways to express this view.";
+
   return (
     <div className="animate-slide-up">
       <div className="bg-[#1e1f20] border border-[#2d2e2f] rounded-2xl overflow-hidden">
-        {/* Header */}
-        <div className="px-5 py-4 bg-gradient-to-r from-blue-500/10 to-transparent border-b border-[#2d2e2f]">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-blue-500/20">
-              <Compass className="w-5 h-5 text-blue-400" />
-            </div>
-            <div>
-              <div className="text-xs text-[#6b6c6d] uppercase tracking-wider">Thesis Explorer</div>
-              <div className="font-semibold text-[#e8e8e8] text-lg">Ways to express your view</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Thesis */}
+        {/* Header - Perplexity-style */}
         <div className="px-5 py-4 border-b border-[#2d2e2f]">
-          <div className="text-xs text-[#6b6c6d] uppercase tracking-wider mb-2">Your thesis</div>
-          <div className="flex items-start gap-3">
-            <div className={`p-2 rounded-lg ${sentiment === "bullish" ? "bg-[#20b2aa]/10" : "bg-red-500/10"}`}>
-              {sentiment === "bullish" ? (
-                <TrendingUp className={`w-5 h-5 ${sentiment === "bullish" ? "text-[#20b2aa]" : "text-red-400"}`} />
-              ) : (
-                <TrendingDown className="w-5 h-5 text-red-400" />
-              )}
+          <div className="flex items-center gap-3 mb-3">
+            <div className={`p-2.5 rounded-xl ${sentiment === "bullish" ? "bg-[#20b2aa]/10" : "bg-red-500/10"}`}>
+              <Compass className={`w-5 h-5 ${sentiment === "bullish" ? "text-[#20b2aa]" : "text-red-400"}`} />
             </div>
             <div>
-              <div className="text-[#e8e8e8] text-lg font-medium">&ldquo;{thesis}&rdquo;</div>
-              <div className="text-sm text-[#6b6c6d] mt-1">
-                {sentiment === "bullish" ? "Looking for upside exposure" : "Looking for downside exposure"}
-              </div>
+              <div className="text-xs text-[#6b6c6d] uppercase tracking-wider">Your thesis</div>
+              <div className="font-semibold text-[#e8e8e8] text-lg">&ldquo;{thesis}&rdquo;</div>
             </div>
+          </div>
+          
+          {/* AI Insight - the Perplexity moment */}
+          <div className="flex items-start gap-3 p-3 bg-[#242526] rounded-xl">
+            <Lightbulb className="w-4 h-4 text-[#d4a853] mt-0.5 flex-shrink-0" />
+            <p className="text-sm text-[#9a9b9c] leading-relaxed">{insight}</p>
           </div>
         </div>
 
-        {/* Instruments by type */}
-        <div className="divide-y divide-[#2d2e2f]">
-          {Object.entries(groupedInstruments).map(([type, insts]) => {
-            const TypeIcon = TYPE_ICONS[type as keyof typeof TYPE_ICONS];
-            
-            return (
-              <div key={type} className="px-5 py-4">
-                <div className="flex items-center gap-2 text-xs text-[#6b6c6d] uppercase tracking-wider mb-3">
-                  <TypeIcon className="w-3.5 h-3.5" />
-                  {TYPE_LABELS[type as keyof typeof TYPE_LABELS]}
-                </div>
-                
-                <div className="space-y-2">
-                  {insts.map((inst, i) => {
-                    const isSelected = selectedInstrument?.symbol === inst.symbol;
-                    const priceData = prices[inst.symbol.replace("-PERP", "")];
-                    
-                    return (
-                      <button
-                        key={i}
-                        onClick={() => setSelectedInstrument(inst)}
-                        className={`w-full p-4 rounded-xl border transition-all text-left ${
-                          isSelected 
-                            ? "bg-blue-500/10 border-blue-500/30" 
-                            : "bg-[#242526] border-transparent hover:border-[#3d3e3f]"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-start gap-3">
-                            <div className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                              isSelected ? "border-blue-400 bg-blue-400" : "border-[#3d3e3f]"
-                            }`}>
-                              {isSelected && <Check className="w-2.5 h-2.5 text-white" />}
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium text-[#e8e8e8]">{inst.name}</span>
-                                <span className={`px-2 py-0.5 text-xs rounded-full ${
-                                  inst.direction === "long" 
-                                    ? "bg-[#20b2aa]/20 text-[#20b2aa]" 
-                                    : "bg-red-500/20 text-red-400"
-                                }`}>
-                                  {inst.direction.toUpperCase()}
-                                </span>
-                                {inst.directness === "direct" && (
-                                  <span className="px-2 py-0.5 text-xs rounded-full bg-[#d4a853]/20 text-[#d4a853]">
-                                    Most direct
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-sm text-[#6b6c6d] mt-1">{inst.reasoning}</div>
-                              <div className="flex items-center gap-3 mt-2 text-xs text-[#6b6c6d]">
-                                <span>Liquidity: {inst.liquidity}</span>
-                                {inst.fundingRate !== undefined && (
-                                  <span className={inst.fundingRate >= 0 ? "text-red-400" : "text-[#20b2aa]"}>
-                                    Funding: {inst.fundingRate >= 0 ? "+" : ""}{(inst.fundingRate * 100).toFixed(3)}%
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          {priceData && (
-                            <FlashingPrice 
-                              value={priceData.price} 
-                              prefix="$"
-                              decimals={priceData.price > 1000 ? 0 : 2}
-                              className="font-mono text-[#e8e8e8]"
-                            />
+        {/* Instruments - clean list */}
+        <div className="px-5 py-4">
+          <div className="text-xs text-[#6b6c6d] uppercase tracking-wider mb-3">
+            Ways to trade this
+          </div>
+          
+          <div className="space-y-2">
+            {instruments.map((inst, i) => {
+              const isSelected = selectedInstrument?.symbol === inst.symbol;
+              const priceData = prices[inst.symbol];
+              const isBestChoice = i === 0;
+              
+              return (
+                <button
+                  key={inst.symbol}
+                  onClick={() => setSelectedInstrument(inst)}
+                  className={`w-full p-4 rounded-xl border transition-all text-left ${
+                    isSelected 
+                      ? "bg-[#20b2aa]/10 border-[#20b2aa]/30" 
+                      : "bg-[#242526] border-transparent hover:border-[#3d3e3f]"
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start gap-3">
+                      <div className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                        isSelected ? "border-[#20b2aa] bg-[#20b2aa]" : "border-[#3d3e3f]"
+                      }`}>
+                        {isSelected && <Check className="w-3 h-3 text-white" />}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-semibold text-[#e8e8e8]">{inst.name}</span>
+                          <span className={`px-2 py-0.5 text-xs rounded-full ${
+                            inst.direction === "short" 
+                              ? "bg-red-500/20 text-red-400" 
+                              : "bg-[#20b2aa]/20 text-[#20b2aa]"
+                          }`}>
+                            {inst.direction.toUpperCase()}
+                          </span>
+                          {isBestChoice && (
+                            <span className="flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-[#d4a853]/20 text-[#d4a853]">
+                              <Sparkles className="w-3 h-3" />
+                              Best match
+                            </span>
                           )}
                         </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
+                        <p className="text-sm text-[#9a9b9c]">{inst.reasoning}</p>
+                      </div>
+                    </div>
+                    {priceData && (
+                      <div className="text-right ml-4">
+                        <FlashingPrice 
+                          value={priceData.price} 
+                          prefix="$"
+                          decimals={priceData.price > 1000 ? 0 : 2}
+                          className="font-mono text-[#e8e8e8]"
+                        />
+                        <div className={`text-xs ${priceData.changePercent24h >= 0 ? "text-[#20b2aa]" : "text-red-400"}`}>
+                          {priceData.changePercent24h >= 0 ? "+" : ""}{priceData.changePercent24h.toFixed(1)}% today
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Selected summary */}
         {selectedInstrument && (
-          <div className="px-5 py-3 bg-blue-500/5 border-t border-[#2d2e2f] flex items-center gap-3">
-            <Sparkles className="w-4 h-4 text-blue-400" />
-            <span className="text-sm text-[#9a9b9c]">
-              {selectedInstrument.direction === "long" ? "Going long" : "Shorting"} {selectedInstrument.name} to express your view
-            </span>
+          <div className="px-5 py-3 bg-[#20b2aa]/5 border-t border-[#2d2e2f]">
+            <div className="flex items-center gap-2 text-sm">
+              {selectedInstrument.direction === "long" ? (
+                <TrendingUp className="w-4 h-4 text-[#20b2aa]" />
+              ) : (
+                <TrendingDown className="w-4 h-4 text-red-400" />
+              )}
+              <span className="text-[#9a9b9c]">
+                Going <span className={selectedInstrument.direction === "long" ? "text-[#20b2aa]" : "text-red-400"}>
+                  {selectedInstrument.direction}
+                </span> {selectedInstrument.symbol} to express your view
+              </span>
+            </div>
           </div>
         )}
 
@@ -196,14 +165,14 @@ export function ThesisExplorerCard({ thesis, sentiment, instruments, onSelect, o
               !selectedInstrument
                 ? "bg-[#242526] text-[#6b6c6d] cursor-not-allowed"
                 : confirmed
-                  ? "bg-blue-500 text-white"
-                  : "bg-blue-500 hover:bg-blue-400 text-white"
+                  ? "bg-[#20b2aa] text-white"
+                  : "bg-[#20b2aa] hover:bg-[#2cc5bc] text-white"
             }`}
           >
             {confirmed ? (
-              <><Check className="w-4 h-4" />Selected</>
+              <><Check className="w-4 h-4" />Opening position</>
             ) : (
-              <>Trade {selectedInstrument?.symbol || "..."}<ChevronRight className="w-4 h-4" /></>
+              <>Trade this<ChevronRight className="w-4 h-4" /></>
             )}
           </button>
         </div>
@@ -211,4 +180,3 @@ export function ThesisExplorerCard({ thesis, sentiment, instruments, onSelect, o
     </div>
   );
 }
-
