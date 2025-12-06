@@ -38,6 +38,10 @@ export interface ParsedIntent {
   risk?: number;
   stop?: number;
   notional?: number;
+  // Interpretation metadata
+  interpretation?: string;
+  confidence?: number;
+  originalInput?: string;
 }
 
 // Templates for demo
@@ -89,6 +93,7 @@ export const ZEC_TWAP_TEMPLATE: Omit<TwapPlan, "id" | "createdAt" | "status"> = 
 // Parse user input and detect intent
 export function parseRouterIntent(input: string): ParsedIntent {
   const normalized = input.toLowerCase();
+  const originalInput = input;
   
   // Extract risk amount
   const riskMatch = normalized.match(/(?:risk|max|lose)\s*\$?(\d+(?:,?\d+)?(?:k)?)/);
@@ -103,14 +108,14 @@ export function parseRouterIntent(input: string): ParsedIntent {
   }
 
   // Extract stop/invalidation price
-  const stopMatch = normalized.match(/(?:stop|invalidat\w*|above|below)\s*\$?(\d+(?:,?\d+)?(?:\.\d+)?)/);
+  const stopMatch = normalized.match(/(?:stop|invalidat\w*|above|below|holds?)\s*\$?(\d+(?:,?\d+)?(?:\.\d+)?)/);
   let stop: number | undefined;
   if (stopMatch) {
     stop = parseFloat(stopMatch[1].replace(",", ""));
   }
 
   // Extract notional for TWAP
-  const notionalMatch = normalized.match(/(\d+(?:,?\d+)?(?:k)?)\s*(?:notional|worth|of)/);
+  const notionalMatch = normalized.match(/\$?(\d+(?:,?\d+)?(?:k)?)\s*(?:notional|worth|total)/);
   let notional: number | undefined;
   if (notionalMatch) {
     let notionalStr = notionalMatch[1].replace(",", "");
@@ -121,43 +126,75 @@ export function parseRouterIntent(input: string): ParsedIntent {
     }
   }
 
+  // Detect assets
+  const isBtc = normalized.includes("btc") || normalized.includes("bitcoin");
+  const isEth = normalized.includes("eth") || normalized.includes("ethereum");
+  const isZec = normalized.includes("zec") || normalized.includes("zcash");
+  const isSol = normalized.includes("sol") || normalized.includes("solana");
+
+  // Detect direction - expanded to catch vague bearish/bullish language
+  const bearishWords = ["short", "dump", "down", "fall", "drop", "weak", "fade", "sell", "bearish", "crash", "tank"];
+  const bullishWords = ["long", "buy", "up", "rise", "pump", "strong", "bullish", "moon", "rally", "rip"];
+  
+  const isBearish = bearishWords.some(word => normalized.includes(word));
+  const isBullish = bullishWords.some(word => normalized.includes(word));
+
   // Detect TWAP intent
-  if (normalized.includes("twap") || normalized.includes("accumulate") || 
-      normalized.includes("books are thin") || normalized.includes("thin book") ||
-      (notional && notional >= 10000)) {
+  const twapWords = ["twap", "accumulate", "slowly", "gradual", "spread", "over time", "thin book", "books are thin"];
+  const isTwap = twapWords.some(word => normalized.includes(word)) || (notional && notional >= 10000);
+
+  if (isTwap) {
+    const market = isZec ? "ZEC-PERP" : isBtc ? "BTC-PERP" : isSol ? "SOL-PERP" : isEth ? "ETH-PERP" : "ZEC-PERP";
     return {
       type: "twap",
-      market: normalized.includes("zec") ? "ZEC-PERP" : 
-              normalized.includes("btc") ? "BTC-PERP" : 
-              normalized.includes("sol") ? "SOL-PERP" : "ZEC-PERP",
-      direction: normalized.includes("short") ? "short" : "long",
+      market,
+      direction: isBearish ? "short" : "long",
       risk,
       notional: notional || 50000,
+      interpretation: `Gradual ${isBearish ? "sell" : "accumulation"} of ${market.split("-")[0]}`,
+      confidence: notional ? 90 : 75,
+      originalInput,
     };
   }
 
-  // Detect trade intent
-  const isBtc = normalized.includes("btc") || normalized.includes("bitcoin");
-  const isZec = normalized.includes("zec") || normalized.includes("zcash");
-  const isSol = normalized.includes("sol") || normalized.includes("solana");
-  const isShort = normalized.includes("short");
-  const isLong = normalized.includes("long") || normalized.includes("buy");
-
-  if (isBtc || isZec || isSol || isShort || isLong) {
+  // Detect trade intent - now catches vague inputs
+  if (isBtc || isEth || isZec || isSol || isBearish || isBullish) {
     let market = "BTC-PERP";
     if (isZec) market = "ZEC-PERP";
-    if (isSol) market = "SOL-PERP";
+    else if (isSol) market = "SOL-PERP";
+    else if (isEth) market = "ETH-PERP";
+
+    const direction: "long" | "short" = isBearish ? "short" : "long";
+    
+    // Build interpretation string
+    let interpretation = "";
+    const asset = market.split("-")[0];
+    
+    if (isBearish) {
+      interpretation = `Bearish on ${asset} → Short position`;
+    } else {
+      interpretation = `Bullish on ${asset} → Long position`;
+    }
+    
+    // Calculate confidence based on how specific the input was
+    let confidence = 70;
+    if (risk) confidence += 10;
+    if (stop) confidence += 10;
+    if (normalized.includes("short") || normalized.includes("long")) confidence += 5;
 
     return {
       type: "trade",
       market,
-      direction: isShort ? "short" : "long",
+      direction,
       risk,
       stop,
+      interpretation,
+      confidence: Math.min(confidence, 95),
+      originalInput,
     };
   }
 
-  return { type: "unknown" };
+  return { type: "unknown", originalInput };
 }
 
 // Calculate position size from risk and stop distance

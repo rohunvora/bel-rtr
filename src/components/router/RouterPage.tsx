@@ -17,8 +17,8 @@ import {
 } from "@/lib/router-types";
 
 type PlanResult = 
-  | { type: "trade"; plan: Omit<TradePlan, "id" | "createdAt" | "status"> }
-  | { type: "twap"; plan: Omit<TwapPlan, "id" | "createdAt" | "status"> }
+  | { type: "trade"; plan: Omit<TradePlan, "id" | "createdAt" | "status">; interpretation?: string; confidence?: number; originalInput?: string }
+  | { type: "twap"; plan: Omit<TwapPlan, "id" | "createdAt" | "status">; interpretation?: string; confidence?: number; originalInput?: string }
   | null;
 
 export function RouterPage() {
@@ -64,7 +64,13 @@ export function RouterPage() {
       if (intent.market) template.market = intent.market;
       if (intent.risk) template.maxRisk = intent.risk;
       if (intent.notional) template.totalNotional = intent.notional;
-      setCurrentPlan({ type: "twap", plan: template });
+      setCurrentPlan({ 
+        type: "twap", 
+        plan: template,
+        interpretation: intent.interpretation,
+        confidence: intent.confidence,
+        originalInput: intent.originalInput,
+      });
     } else if (intent.type === "trade") {
       let template;
       if (intent.market === "BTC-PERP" && intent.direction === "short") {
@@ -73,6 +79,11 @@ export function RouterPage() {
         template = { ...ZEC_LONG_TEMPLATE };
       } else if (intent.market === "SOL-PERP") {
         template = { ...SOL_LONG_TEMPLATE };
+      } else if (intent.market === "ETH-PERP") {
+        // ETH template - create on the fly based on direction
+        template = intent.direction === "short" 
+          ? { ...BTC_SHORT_TEMPLATE, market: "ETH-PERP", sizeUnit: "ETH", size: 1.8, entryPrice: 3400, stopPrice: 3550 }
+          : { ...SOL_LONG_TEMPLATE, market: "ETH-PERP", sizeUnit: "ETH", size: 0.9, entryPrice: 3400, stopPrice: 3200 };
       } else {
         template = intent.direction === "short" 
           ? { ...BTC_SHORT_TEMPLATE }
@@ -83,9 +94,15 @@ export function RouterPage() {
       if (intent.risk) template.maxRisk = intent.risk;
       if (intent.stop) template.stopPrice = intent.stop;
 
-      setCurrentPlan({ type: "trade", plan: template });
+      setCurrentPlan({ 
+        type: "trade", 
+        plan: template,
+        interpretation: intent.interpretation,
+        confidence: intent.confidence,
+        originalInput: intent.originalInput,
+      });
     } else {
-      addToast("error", "Couldn't understand that", "Try: 'short BTC, $3k risk, stop at 92k'");
+      addToast("error", "Couldn't understand that", "Try something like 'I think BTC is going to dump'");
     }
   }, [addToast]);
 
@@ -183,10 +200,10 @@ export function RouterPage() {
             {!currentPlan && (
               <div className="text-center mb-8">
                 <h2 className="text-2xl font-semibold text-[#e8e8e8] mb-2">
-                  What do you want to trade?
+                  What&apos;s your idea?
                 </h2>
                 <p className="text-[#9a9b9c]">
-                  Describe your trade in plain English. We&apos;ll calculate the right size based on your risk.
+                  Even a rough thought works. We&apos;ll help you turn it into a structured trade.
                 </p>
               </div>
             )}
@@ -199,7 +216,7 @@ export function RouterPage() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="e.g., short BTC with $3k max risk, stop at 92k"
+                  placeholder="e.g., I think BTC is going to dump..."
                   rows={1}
                   className="w-full bg-transparent text-[#e8e8e8] placeholder-[#6b6c6d] px-5 py-4 pr-14 resize-none focus:outline-none text-base leading-relaxed"
                   style={{ minHeight: "56px" }}
@@ -221,27 +238,70 @@ export function RouterPage() {
 
             {/* Suggestions - only show when no plan */}
             {!currentPlan && (
-              <div className="flex flex-wrap gap-2 mb-8">
-                {[
-                  "short BTC, $3k max risk, stop at 92k",
-                  "long SOL, risk $2k, stop at 180",
-                  "buy $50k of ZEC slowly over 15 min",
-                ].map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    onClick={() => handleSuggestionClick(suggestion)}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-[#242526] hover:bg-[#2d2e2f] border border-[#2d2e2f] rounded-xl text-sm text-[#9a9b9c] hover:text-[#e8e8e8] transition-colors"
-                  >
-                    <Sparkles className="w-3 h-3" />
-                    {suggestion}
-                  </button>
-                ))}
+              <div className="space-y-4 mb-8">
+                {/* Vague ideas - the key insight */}
+                <div>
+                  <div className="text-xs text-[#6b6c6d] uppercase tracking-wider mb-2">Start with an idea</div>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      "I think BTC is going to dump",
+                      "SOL looks weak here",
+                      "I want to fade this ETH rally",
+                    ].map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        onClick={() => handleSuggestionClick(suggestion)}
+                        className="px-3 py-2 bg-[#242526] hover:bg-[#2d2e2f] border border-[#2d2e2f] rounded-xl text-sm text-[#9a9b9c] hover:text-[#e8e8e8] transition-colors"
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* More specific */}
+                <div>
+                  <div className="text-xs text-[#6b6c6d] uppercase tracking-wider mb-2">Or be more specific</div>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      "short BTC, max $3k risk",
+                      "long SOL if it holds 180",
+                      "accumulate ZEC slowly, $50k total",
+                    ].map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        onClick={() => handleSuggestionClick(suggestion)}
+                        className="flex items-center gap-1.5 px-3 py-2 bg-[#1e1f20] hover:bg-[#242526] border border-[#2d2e2f] rounded-xl text-sm text-[#6b6c6d] hover:text-[#9a9b9c] transition-colors"
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
 
             {/* Results area */}
             {currentPlan && (
               <div ref={resultsRef} className="mt-6">
+                {/* Interpretation header */}
+                {currentPlan.originalInput && (
+                  <div className="mb-4">
+                    <div className="text-lg font-medium text-[#e8e8e8] mb-1">
+                      &ldquo;{currentPlan.originalInput}&rdquo;
+                    </div>
+                    {currentPlan.interpretation && (
+                      <div className="text-sm text-[#6b6c6d]">
+                        Understood as: <span className="text-[#20b2aa]">{currentPlan.interpretation}</span>
+                        {currentPlan.confidence && (
+                          <span className="ml-2 text-[#6b6c6d]">· {currentPlan.confidence}% confidence</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {currentPlan.type === "trade" && (
                   <TradePlanCard
                     plan={currentPlan.plan}
@@ -263,9 +323,9 @@ export function RouterPage() {
             {!currentPlan && (
               <div className="mt-8 grid grid-cols-3 gap-4">
                 {[
-                  { step: "1", title: "Describe your trade", desc: "Tell us what and how much risk" },
-                  { step: "2", title: "Review the plan", desc: "See size, entry, and stop" },
-                  { step: "3", title: "Confirm", desc: "One click to place" },
+                  { step: "1", title: "Share your idea", desc: "Even 'BTC looks weak' works" },
+                  { step: "2", title: "We structure it", desc: "Size, entry, stop — calculated" },
+                  { step: "3", title: "You confirm", desc: "Review and place with one click" },
                 ].map((item) => (
                   <div key={item.step} className="text-center p-4 bg-[#1e1f20] rounded-xl border border-[#2d2e2f]">
                     <div className="w-7 h-7 rounded-full bg-[#242526] border border-[#3d3e3f] flex items-center justify-center mx-auto mb-2">
