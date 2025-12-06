@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { ArrowUp, Coins, Vote, Building2, Wifi, WifiOff, Target, Layers, Sparkles } from "lucide-react";
+import { ArrowUp, Coins, Vote, Building2, Wifi, WifiOff, Target, Layers, Sparkles, Clock, X } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
 import { TradePlanCard, TwapPlanCard } from "./TradePlanCard";
 import { TradeCard } from "./TradeCard";
@@ -11,6 +11,7 @@ import { PredictionCard, StockCard, ThesisExplorerCard, TargetTradeCard, Portfol
 import { ToastContainer, ToastMessage } from "@/components/Toast";
 import { FlashingPrice } from "@/components/AnimatedPrice";
 import { useLivePrices } from "@/lib/use-live-prices";
+import { usePersistedState, useOnboarding } from "@/lib/use-persisted-state";
 import {
   TradePlan,
   TwapPlan,
@@ -68,6 +69,15 @@ const EXAMPLES = [
   { text: "Peptides are the future", type: "stock" as const, icon: Building2, color: "text-blue-400 bg-blue-500/10" },
   { text: "AI is overhyped", type: "thesis" as const, icon: Sparkles, color: "text-pink-400 bg-pink-500/10" },
   { text: "Cut my risk in half", type: "portfolio" as const, icon: Layers, color: "text-orange-400 bg-orange-500/10" },
+];
+
+// More examples for variety (shown on hover/expand)
+const MORE_EXAMPLES = [
+  { text: "Long SOL with 5k risk", type: "crypto" as const },
+  { text: "BTC hits 150k by EOY", type: "target" as const },
+  { text: "Trump wins", type: "prediction" as const },
+  { text: "Fed cuts rates", type: "prediction" as const },
+  { text: "Accumulate 50k of ETH slowly", type: "twap" as const },
 ];
 
 // Stock thesis mapping
@@ -155,21 +165,25 @@ export function RouterPage() {
   const { prices, isConnected } = useLivePrices();
   const [input, setInput] = useState("");
   const [modalState, setModalState] = useState<ModalState>({ type: "none" });
-  const [portfolio, setPortfolio] = useState<AnyPlan[]>([]);
+  const [portfolio, setPortfolio] = usePersistedState<AnyPlan[]>("router_portfolio", []);
   const [lockTarget, setLockTarget] = useState<TradePlan | null>(null);
   const [showLockModal, setShowLockModal] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [initialized, setInitialized] = useState(false);
+  const [showOnboarding, dismissOnboarding] = useOnboarding();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
-  // Initialize demo positions once prices are loaded
+  // Initialize demo positions once prices are loaded (only if no persisted portfolio)
   useEffect(() => {
     if (!initialized && prices["BTC"] && prices["ETH"]) {
-      setPortfolio(createDemoPositions(prices));
+      // Only add demo positions if portfolio is empty
+      if (portfolio.length === 0) {
+        setPortfolio(createDemoPositions(prices));
+      }
       setInitialized(true);
     }
-  }, [prices, initialized]);
+  }, [prices, initialized, portfolio.length, setPortfolio]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -512,10 +526,11 @@ export function RouterPage() {
               No positions yet
             </div>
           ) : (
-            portfolio.map((plan) => (
+            portfolio.map((plan, index) => (
               <TradeCard
                 key={plan.id}
                 plan={plan}
+                index={index}
                 onRemove={() => handleRemove(plan.id)}
                 onLockRisk={'leverage' in plan ? () => handleLockRisk(plan.id) : undefined}
               />
@@ -576,12 +591,29 @@ export function RouterPage() {
 
             {/* Input */}
             <div className="relative mb-6">
-              <div className="bg-[#1e1f20] border border-[#2d2e2f] rounded-xl overflow-hidden focus-within:border-[#3d3e3f] transition-colors">
+              {/* Onboarding tooltip */}
+              {showOnboarding && (
+                <div className="absolute -top-16 left-0 right-0 animate-tooltip z-10">
+                  <div className="bg-[#20b2aa] text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center justify-between">
+                    <span className="text-sm">Type what you think will happen, or click an example below</span>
+                    <button onClick={dismissOnboarding} className="ml-3 p-1 hover:bg-white/20 rounded">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="w-4 h-4 bg-[#20b2aa] transform rotate-45 absolute left-8 -bottom-2" />
+                </div>
+              )}
+              
+              <div className="bg-[#1e1f20] border border-[#2d2e2f] rounded-xl overflow-hidden focus-within:border-[#3d3e3f] transition-colors hover-glow">
                 <textarea
                   ref={textareaRef}
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    if (showOnboarding) dismissOnboarding();
+                  }}
                   onKeyDown={handleKeyDown}
+                  onFocus={() => showOnboarding && dismissOnboarding()}
                   placeholder="BTC is going to dump... ETH to 5000 by March... Lakers win tonight..."
                   rows={1}
                   className="w-full bg-transparent text-[#e8e8e8] placeholder-[#4a4b4c] px-4 py-3.5 pr-14 resize-none focus:outline-none"
@@ -590,7 +622,7 @@ export function RouterPage() {
                 <button
                   onClick={handleSubmit}
                   disabled={!input.trim()}
-                  className={`absolute right-2.5 bottom-2.5 p-2.5 rounded-lg transition-all ${
+                  className={`absolute right-2.5 bottom-2.5 p-2.5 rounded-lg transition-all btn-press ${
                     input.trim() ? "bg-[#20b2aa] hover:bg-[#2cc5bc] text-white" : "bg-[#2d2e2f] text-[#4a4b4c]"
                   }`}
                 >
@@ -609,8 +641,12 @@ export function RouterPage() {
                     return (
                       <button
                         key={i}
-                        onClick={() => handleExampleClick(ex)}
-                        className="flex items-center gap-2 px-3 py-2 bg-[#1e1f20] hover:bg-[#242526] border border-[#2d2e2f] rounded-lg transition-colors"
+                        onClick={() => {
+                          handleExampleClick(ex);
+                          if (showOnboarding) dismissOnboarding();
+                        }}
+                        className="flex items-center gap-2 px-3 py-2 bg-[#1e1f20] hover:bg-[#242526] border border-[#2d2e2f] rounded-lg transition-all hover-scale btn-press"
+                        style={{ animationDelay: `${i * 50}ms` }}
                       >
                         <div className={`p-1 rounded ${ex.color}`}>
                           <Icon className="w-3 h-3" />

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, Lock, X, Clock, ExternalLink, Vote, Building2 } from "lucide-react";
+import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, Lock, X, Clock, ExternalLink, Vote, Building2, Share2, Copy, Check } from "lucide-react";
 import { TradePlan, PredictionPlan, StockPlan, formatCurrency, formatNumber } from "@/lib/router-types";
 import { FlashingPrice } from "@/components/AnimatedPrice";
 import { useLivePrices } from "@/lib/use-live-prices";
@@ -10,8 +10,10 @@ type AnyPlan = TradePlan | PredictionPlan | StockPlan;
 
 interface TradeCardProps {
   plan: AnyPlan;
+  index?: number; // For staggered animation
   onRemove: () => void;
   onLockRisk?: () => void;
+  onShare?: () => void;
 }
 
 // Type guards
@@ -27,10 +29,14 @@ function isStockPlan(plan: AnyPlan): plan is StockPlan {
   return plan.marketType === "stock";
 }
 
-export function TradeCard({ plan, onRemove, onLockRisk }: TradeCardProps) {
+export function TradeCard({ plan, index = 0, onRemove, onLockRisk, onShare }: TradeCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [timeInTrade, setTimeInTrade] = useState("");
+  const [copied, setCopied] = useState(false);
   const { prices } = useLivePrices();
+
+  // Stagger delay for animation
+  const animationDelay = `${index * 80}ms`;
 
   // Calculate time in trade
   useEffect(() => {
@@ -79,11 +85,17 @@ export function TradeCard({ plan, onRemove, onLockRisk }: TradeCardProps) {
       };
     }
     
-    // Mock P&L for prediction/stock
-    const mockPnl = (Math.random() - 0.4) * 500;
+    // Seeded mock P&L for prediction/stock (based on ID for consistency)
+    // Simple hash from ID to get a consistent "random" value
+    const hash = plan.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+    const seed = (hash % 100) / 100; // 0-1
+    const baseAmount = isPredictionPlan(plan) ? plan.amount : (plan as StockPlan).amount;
+    const mockPnl = (seed - 0.35) * baseAmount * 0.5; // -35% to +65% of amount
+    const mockPnlPercent = (mockPnl / baseAmount) * 100;
+    
     return { 
       pnl: mockPnl, 
-      pnlPercent: mockPnl / 100, 
+      pnlPercent: mockPnlPercent, 
       currentPrice: 0,
       riskUsedPercent: 0 
     };
@@ -110,15 +122,37 @@ export function TradeCard({ plan, onRemove, onLockRisk }: TradeCardProps) {
 
   const { icon: TypeIcon, bgClass, iconClass, borderClass } = getTypeStyles();
 
+  // Copy share text to clipboard
+  const handleCopyShare = () => {
+    const pnlText = isProfitable ? `+${formatCurrency(pnl)}` : formatCurrency(pnl);
+    const shareText = `"${plan.prompt}"\n\n${isTradePlan(plan) ? plan.market : isPredictionPlan(plan) ? plan.market : (plan as StockPlan).ticker} → ${pnlText}`;
+    navigator.clipboard.writeText(shareText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
-    <div className={`group relative rounded-xl border overflow-hidden transition-all hover:border-opacity-50 ${borderClass} bg-[#1e1f20]`}>
-      {/* Remove button */}
-      <button
-        onClick={onRemove}
-        className="absolute top-2 right-2 p-1 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-[#2d2e2f] transition-all z-10"
-      >
-        <X className="w-3 h-3 text-[#6b6c6d]" />
-      </button>
+    <div 
+      className={`group relative rounded-xl border overflow-hidden transition-all hover:border-opacity-50 hover-lift ${borderClass} bg-[#1e1f20] animate-card-enter`}
+      style={{ animationDelay }}
+    >
+      {/* Action buttons */}
+      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all z-10">
+        <button
+          onClick={handleCopyShare}
+          className="p-1 rounded-lg hover:bg-[#2d2e2f] transition-colors"
+          title="Copy to clipboard"
+        >
+          {copied ? <Check className="w-3 h-3 text-[#20b2aa]" /> : <Copy className="w-3 h-3 text-[#6b6c6d]" />}
+        </button>
+        <button
+          onClick={onRemove}
+          className="p-1 rounded-lg hover:bg-[#2d2e2f] transition-colors"
+          title="Remove"
+        >
+          <X className="w-3 h-3 text-[#6b6c6d]" />
+        </button>
+      </div>
 
       <div className="p-3">
         {/* Top row: Icon + Market + P&L */}
