@@ -16,7 +16,10 @@ import {
   Loader2,
   AlertCircle,
   Ban,
-  Tag
+  Copy,
+  Check,
+  ExternalLink,
+  ChevronLeft
 } from "lucide-react";
 import { ChartAnalysis } from "@/lib/chart-analysis";
 
@@ -25,8 +28,6 @@ interface ChartAnalystCardProps {
   originalChart: string;
   annotatedChart: string | null;
   annotationStatus: "loading" | "ready" | "failed";
-  onPrepareShort: (setup: TradeSetup) => void;
-  onPrepareLong: (setup: TradeSetup) => void;
   onClose: () => void;
 }
 
@@ -126,23 +127,197 @@ function CollapsibleSection({
   );
 }
 
+// Copyable value component
+function CopyableValue({ 
+  label, 
+  value, 
+  reason,
+}: { 
+  label: string; 
+  value: number;
+  reason?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  
+  const handleCopy = () => {
+    navigator.clipboard.writeText(String(value));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  
+  return (
+    <div className="flex items-start justify-between py-2 px-3 rounded-lg hover:bg-[#1e1f20] transition-colors group">
+      <div className="flex-1">
+        <div className="text-xs text-[#6b6c6d] mb-0.5">{label}</div>
+        <div className="text-sm text-[#e8e8e8] font-mono">${value.toLocaleString()}</div>
+        {reason && <div className="text-xs text-[#6b6c6d] mt-0.5">{reason}</div>}
+      </div>
+      <button
+        onClick={handleCopy}
+        className={`p-1.5 rounded-lg transition-all opacity-0 group-hover:opacity-100 ${
+          copied 
+            ? "bg-emerald-500/20 text-emerald-400" 
+            : "bg-[#2d2e2f] hover:bg-[#3d3e3f] text-[#9a9b9c]"
+        }`}
+        title="Copy"
+      >
+        {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+      </button>
+    </div>
+  );
+}
+
+// Scenario card with expandable trade setup
 function ScenarioCard({
   type,
   scenario,
   zone,
-  onPrepare,
+  isExpanded,
+  onToggle,
+  otherExpanded,
 }: {
   type: "short" | "long";
   scenario: ChartAnalysis["shortScenario"];
   zone: { high: number; low: number };
-  onPrepare: () => void;
+  isExpanded: boolean;
+  onToggle: () => void;
+  otherExpanded: boolean;
 }) {
+  const [copiedAll, setCopiedAll] = useState(false);
   const isShort = type === "short";
   const Icon = isShort ? TrendingDown : TrendingUp;
   const color = isShort ? "rose" : "emerald";
   
+  const handleCopyAll = () => {
+    const values = [
+      `Direction: ${type.toUpperCase()}`,
+      `Entry Zone: $${zone.low.toLocaleString()} - $${zone.high.toLocaleString()}`,
+      `Stop Loss: $${scenario.stopLoss.toLocaleString()}`,
+      `Take Profit 1: $${scenario.target1.toLocaleString()}`,
+      `Take Profit 2: $${scenario.target2.toLocaleString()}`,
+    ].join("\n");
+    navigator.clipboard.writeText(values);
+    setCopiedAll(true);
+    setTimeout(() => setCopiedAll(false), 2000);
+  };
+
+  // Collapsed state (when other card is expanded)
+  if (otherExpanded) {
+    return (
+      <button
+        onClick={onToggle}
+        className={`w-12 p-3 rounded-xl border border-[#2d2e2f] bg-[#1a1b1b] hover:border-${color}-500/30 transition-all flex flex-col items-center justify-center gap-2`}
+      >
+        <div className={`p-1.5 rounded-lg bg-${color}-500/10`}>
+          <Icon className={`w-4 h-4 text-${color}-400`} />
+        </div>
+        <span className={`text-xs text-${color}-400 font-medium [writing-mode:vertical-lr] rotate-180`}>
+          {isShort ? "SHORT" : "LONG"}
+        </span>
+      </button>
+    );
+  }
+
+  // Expanded state (full trade setup)
+  if (isExpanded) {
+    return (
+      <div className={`flex-1 rounded-xl border-2 border-${color}-500/30 bg-[#1a1b1b] overflow-hidden transition-all`}>
+        {/* Header */}
+        <div className={`px-4 py-3 bg-gradient-to-r ${isShort ? "from-rose-500/10" : "from-emerald-500/10"} to-transparent flex items-center justify-between`}>
+          <div className="flex items-center gap-2">
+            <div className={`p-1.5 rounded-lg bg-${color}-500/10`}>
+              <Icon className={`w-4 h-4 text-${color}-400`} />
+            </div>
+            <span className={`font-medium text-${color}-400`}>
+              {isShort ? "Short Setup" : "Long Setup"}
+            </span>
+          </div>
+          <button
+            onClick={onToggle}
+            className="p-1.5 hover:bg-[#242526] rounded-lg transition-colors"
+          >
+            <ChevronLeft className="w-4 h-4 text-[#6b6c6d]" />
+          </button>
+        </div>
+
+        {/* Trigger reminder */}
+        <div className={`px-4 py-2 border-b border-[#2d2e2f] bg-${color}-500/5`}>
+          <div className="text-xs text-[#6b6c6d] mb-0.5">Execute when:</div>
+          <div className={`text-sm text-${color}-400`}>{scenario.trigger}</div>
+        </div>
+
+        {/* Copyable values */}
+        <div className="p-2 space-y-1">
+          <CopyableValue 
+            label="Entry Zone" 
+            value={zone.low}
+            reason={`Zone: $${zone.low.toLocaleString()} – $${zone.high.toLocaleString()}`}
+          />
+          <CopyableValue 
+            label="Stop Loss" 
+            value={scenario.stopLoss}
+            reason={scenario.stopReason}
+          />
+          <CopyableValue 
+            label="Take Profit 1" 
+            value={scenario.target1}
+            reason={scenario.target1Reason}
+          />
+          <CopyableValue 
+            label="Take Profit 2" 
+            value={scenario.target2}
+            reason={scenario.target2Reason}
+          />
+        </div>
+
+        {/* R:R */}
+        <div className="px-4 py-2 border-t border-[#2d2e2f]">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-[#6b6c6d]">Risk/Reward</span>
+            <span className={`font-mono text-${color}-400`}>{scenario.riskReward}</span>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="p-3 border-t border-[#2d2e2f] space-y-2">
+          <button
+            onClick={handleCopyAll}
+            className={`w-full py-2.5 rounded-lg font-medium transition-all flex items-center justify-center gap-2 ${
+              copiedAll
+                ? "bg-emerald-500/20 text-emerald-400"
+                : "bg-[#242526] hover:bg-[#2d2e2f] text-[#e8e8e8]"
+            }`}
+          >
+            {copiedAll ? (
+              <>
+                <Check className="w-4 h-4" />
+                Copied!
+              </>
+            ) : (
+              <>
+                <Copy className="w-4 h-4" />
+                Copy All Values
+              </>
+            )}
+          </button>
+          <a
+            href="https://app.hyperliquid.xyz/trade/BTC"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`w-full py-2.5 rounded-lg font-medium transition-all flex items-center justify-center gap-2
+              bg-${color}-500/10 hover:bg-${color}-500/20 text-${color}-400 border border-${color}-500/20`}
+          >
+            Open Terminal
+            <ExternalLink className="w-4 h-4" />
+          </a>
+        </div>
+      </div>
+    );
+  }
+  
+  // Normal state (both cards visible)
   return (
-    <div className={`flex-1 p-4 rounded-xl border border-[#2d2e2f] bg-[#1a1b1b] hover:border-${color}-500/30 transition-colors`}>
+    <div className={`flex-1 p-4 rounded-xl border border-[#2d2e2f] bg-[#1a1b1b] hover:border-${color}-500/30 transition-all`}>
       <div className="flex items-center gap-2 mb-3">
         <div className={`p-1.5 rounded-lg bg-${color}-500/10`}>
           <Icon className={`w-4 h-4 text-${color}-400`} />
@@ -163,39 +338,28 @@ function ScenarioCard({
           <div className="text-sm text-[#e8e8e8]">{scenario.entry}</div>
         </div>
         
-        {/* Stop Loss with reason */}
         <div>
           <div className="flex items-center justify-between mb-1">
             <span className="text-xs text-[#6b6c6d]">Stop Loss</span>
             <span className={`text-sm font-mono text-${color}-400`}>{scenario.riskReward}</span>
           </div>
           <div className="text-sm text-[#e8e8e8] font-mono">${scenario.stopLoss.toLocaleString()}</div>
-          {scenario.stopReason && (
-            <div className="text-xs text-[#6b6c6d] mt-0.5">{scenario.stopReason}</div>
-          )}
         </div>
         
-        {/* Targets with reasons */}
         <div className="grid grid-cols-2 gap-2">
           <div>
             <div className="text-xs text-[#6b6c6d] mb-1">Target 1</div>
             <div className="text-sm text-[#e8e8e8] font-mono">${scenario.target1.toLocaleString()}</div>
-            {scenario.target1Reason && (
-              <div className="text-xs text-[#6b6c6d] mt-0.5">{scenario.target1Reason}</div>
-            )}
           </div>
           <div>
             <div className="text-xs text-[#6b6c6d] mb-1">Target 2</div>
             <div className="text-sm text-[#e8e8e8] font-mono">${scenario.target2.toLocaleString()}</div>
-            {scenario.target2Reason && (
-              <div className="text-xs text-[#6b6c6d] mt-0.5">{scenario.target2Reason}</div>
-            )}
           </div>
         </div>
       </div>
       
       <button
-        onClick={onPrepare}
+        onClick={onToggle}
         className={`w-full py-2.5 rounded-lg font-medium transition-all btn-press flex items-center justify-center gap-2
           ${isShort 
             ? "bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20" 
@@ -214,11 +378,10 @@ export function ChartAnalystCard({
   originalChart,
   annotatedChart,
   annotationStatus,
-  onPrepareShort,
-  onPrepareLong,
   onClose,
 }: ChartAnalystCardProps) {
   const [viewMode, setViewMode] = useState<"annotated" | "original">("annotated");
+  const [expandedScenario, setExpandedScenario] = useState<"short" | "long" | null>(null);
   
   const displayChart = viewMode === "annotated" && annotatedChart 
     ? annotatedChart 
@@ -230,35 +393,10 @@ export function ChartAnalystCard({
     ? `$${analysis.zone.low.toLocaleString()} – $${analysis.zone.high.toLocaleString()}`
     : "See analysis";
   
-  // Check if this is a "risky" zone based on tags
   const hasChopRisk = analysis.zoneTags?.some(tag => 
     tag.toLowerCase().includes("mid-range") || 
     tag.toLowerCase().includes("chop")
   );
-  
-  const handlePrepareShort = () => {
-    onPrepareShort({
-      direction: "short",
-      entry: analysis.shortScenario.entry,
-      stopLoss: analysis.shortScenario.stopLoss,
-      target1: analysis.shortScenario.target1,
-      target2: analysis.shortScenario.target2,
-      trigger: analysis.shortScenario.trigger,
-      zone: analysis.zone,
-    });
-  };
-  
-  const handlePrepareLong = () => {
-    onPrepareLong({
-      direction: "long",
-      entry: analysis.longScenario.entry,
-      stopLoss: analysis.longScenario.stopLoss,
-      target1: analysis.longScenario.target1,
-      target2: analysis.longScenario.target2,
-      trigger: analysis.longScenario.trigger,
-      zone: analysis.zone,
-    });
-  };
 
   // Fallback to raw analysis
   if (analysis.rawAnalysis) {
@@ -317,7 +455,6 @@ export function ChartAnalystCard({
             </button>
           </div>
           
-          {/* Zone Tags */}
           {analysis.zoneTags && analysis.zoneTags.length > 0 && (
             <ZoneTags tags={analysis.zoneTags} />
           )}
@@ -415,7 +552,7 @@ export function ChartAnalystCard({
           </div>
         )}
 
-        {/* Skip Conditions - NEW */}
+        {/* Skip Conditions */}
         {analysis.skipConditions && analysis.skipConditions.length > 0 && (
           <div className="px-5 py-4 border-b border-[#2d2e2f]">
             <CollapsibleSection 
@@ -435,20 +572,24 @@ export function ChartAnalystCard({
           </div>
         )}
 
-        {/* Two Scenarios */}
+        {/* Two Scenarios - Inline Expandable */}
         <div className="px-5 py-4 border-b border-[#2d2e2f]">
           <div className="flex gap-3">
             <ScenarioCard
               type="short"
               scenario={analysis.shortScenario}
               zone={analysis.zone}
-              onPrepare={handlePrepareShort}
+              isExpanded={expandedScenario === "short"}
+              onToggle={() => setExpandedScenario(expandedScenario === "short" ? null : "short")}
+              otherExpanded={expandedScenario === "long"}
             />
             <ScenarioCard
               type="long"
               scenario={analysis.longScenario}
               zone={analysis.zone}
-              onPrepare={handlePrepareLong}
+              isExpanded={expandedScenario === "long"}
+              onToggle={() => setExpandedScenario(expandedScenario === "long" ? null : "long")}
+              otherExpanded={expandedScenario === "short"}
             />
           </div>
         </div>

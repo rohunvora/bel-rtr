@@ -9,7 +9,7 @@ import { TradePlanCard, TwapPlanCard } from "./TradePlanCard";
 import { TradeCard } from "./TradeCard";
 import { LockRiskModal } from "./LockRiskModal";
 import { ThinkingIndicator, getThinkingText } from "./ThinkingIndicator";
-import { PredictionCard, StockCard, ThesisExplorerCard, TargetTradeCard, PortfolioActionCard, ChartAnalystCard, TradeSetupCard, TradeSetup } from "./modals";
+import { PredictionCard, StockCard, ThesisExplorerCard, TargetTradeCard, PortfolioActionCard, ChartAnalystCard } from "./modals";
 import { AIResponseCard } from "./AIResponseCard";
 import { analyzeChart, fileToBase64 } from "@/lib/gemini";
 import { analyzeChartStructured, annotateChart, ChartAnalysis } from "@/lib/chart-analysis";
@@ -68,8 +68,7 @@ type ModalState =
   | { type: "portfolio_action"; action: "reduce" | "hedge" | "close_all"; prompt: string }
   | { type: "ai_response"; response: string; image?: string; generatedImage?: string; prompt: string }
   | { type: "ai_loading"; prompt: string }
-  | { type: "chart_analyst"; analysis: ChartAnalysis; originalChart: string; annotatedChart: string | null; annotationStatus: "loading" | "ready" | "failed"; prompt: string }
-  | { type: "trade_setup"; setup: TradeSetup; analysis: ChartAnalysis; originalChart: string; annotatedChart: string | null; prompt: string };
+  | { type: "chart_analyst"; analysis: ChartAnalysis; originalChart: string; annotatedChart: string | null; annotationStatus: "loading" | "ready" | "failed"; prompt: string };
 
 // Rich examples showing variety
 const EXAMPLES = [
@@ -569,46 +568,6 @@ export function RouterPage() {
     addToast("success", "Portfolio updated", "Changes applied");
   }, [addToast, clearModal]);
 
-  // Chart analyst handlers
-  const handlePrepareShort = useCallback((setup: TradeSetup) => {
-    if (modalState.type === "chart_analyst") {
-      setModalState({
-        type: "trade_setup",
-        setup,
-        analysis: modalState.analysis,
-        originalChart: modalState.originalChart,
-        annotatedChart: modalState.annotatedChart,
-        prompt: modalState.prompt,
-      });
-    }
-  }, [modalState]);
-
-  const handlePrepareLong = useCallback((setup: TradeSetup) => {
-    if (modalState.type === "chart_analyst") {
-      setModalState({
-        type: "trade_setup",
-        setup,
-        analysis: modalState.analysis,
-        originalChart: modalState.originalChart,
-        annotatedChart: modalState.annotatedChart,
-        prompt: modalState.prompt,
-      });
-    }
-  }, [modalState]);
-
-  const handleBackToAnalysis = useCallback(() => {
-    if (modalState.type === "trade_setup") {
-      setModalState({
-        type: "chart_analyst",
-        analysis: modalState.analysis,
-        originalChart: modalState.originalChart,
-        annotatedChart: modalState.annotatedChart,
-        annotationStatus: modalState.annotatedChart ? "ready" : "failed",
-        prompt: modalState.prompt,
-      });
-    }
-  }, [modalState]);
-
   const handleRemove = useCallback((id: string) => {
     setPortfolio((prev) => prev.filter((p) => p.id !== id));
   }, []);
@@ -874,7 +833,7 @@ export function RouterPage() {
               </div>
             )}
 
-            {/* Chart Analyst - Structured Analysis */}
+            {/* Chart Analyst - Structured Analysis with Inline Trade Setup */}
             {modalState.type === "chart_analyst" && (
               <div ref={resultsRef}>
                 <ChartAnalystCard
@@ -882,20 +841,6 @@ export function RouterPage() {
                   originalChart={modalState.originalChart}
                   annotatedChart={modalState.annotatedChart}
                   annotationStatus={modalState.annotationStatus}
-                  onPrepareShort={handlePrepareShort}
-                  onPrepareLong={handlePrepareLong}
-                  onClose={clearModal}
-                />
-              </div>
-            )}
-
-            {/* Trade Setup - Pre-filled values for terminal */}
-            {modalState.type === "trade_setup" && (
-              <div ref={resultsRef}>
-                <TradeSetupCard
-                  setup={modalState.setup}
-                  currentPrice={modalState.analysis.currentPrice}
-                  onBack={handleBackToAnalysis}
                   onClose={clearModal}
                 />
               </div>
