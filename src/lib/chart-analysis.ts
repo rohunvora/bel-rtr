@@ -24,24 +24,34 @@ export interface ChartAnalysis {
     low: number;
     label: string;
   };
+  // NEW: Descriptive tags about the zone quality
+  zoneTags: string[];
   currentPrice: number;
   status: "waiting" | "at_zone" | "above_zone" | "below_zone";
   statusText: string;
   reasoning: string;
+  // NEW: When to skip this zone
+  skipConditions: string[];
   shortScenario: {
     trigger: string;
     entry: string;
     stopLoss: number;
+    stopReason: string; // NEW: Why this stop level
     target1: number;
+    target1Reason: string; // NEW: Why this target
     target2: number;
+    target2Reason: string; // NEW: Why this target
     riskReward: string;
   };
   longScenario: {
     trigger: string;
     entry: string;
     stopLoss: number;
+    stopReason: string;
     target1: number;
+    target1Reason: string;
     target2: number;
+    target2Reason: string;
     riskReward: string;
   };
   watchFor: string[];
@@ -54,58 +64,73 @@ export interface ChartAnalysis {
   error?: string;
 }
 
-const ANALYSIS_PROMPT = `You are an expert crypto perps trader analyzing a chart. Your job is to identify THE ONE key decision zone that matters and explain the two possible plays.
+const ANALYSIS_PROMPT = `You are an expert crypto perps trader analyzing a chart. Identify THE ONE key decision zone and explain the two possible plays.
 
-CRITICAL: Focus on the SINGLE most important price zone where the market will make its next decision. Don't overwhelm with multiple levels.
+ZONE SELECTION RULES:
+- Pick a zone where SOMETHING HAPPENED BEFORE (prior resistance, prior support, where a big move started)
+- Don't just pick where price currently is — that's not a decision zone, that's just "now"
+- If the chart shows mostly sideways chop with no clear level, say so honestly
 
-Analyze this chart and respond with ONLY valid JSON (no markdown, no code blocks, just raw JSON):
+Respond with ONLY valid JSON (no markdown, no code blocks):
 
 {
   "zone": {
-    "high": <number - upper bound of decision zone>,
-    "low": <number - lower bound of decision zone>,
-    "label": "<string - simple label like 'Decision Zone' or 'Key Resistance'>"
+    "high": <number>,
+    "low": <number>,
+    "label": "<e.g. 'Prior Resistance' or 'Breakdown Origin'>"
   },
-  "currentPrice": <number - approximate current price from chart>,
-  "status": "<'waiting' if price is approaching zone, 'at_zone' if at the zone, 'above_zone' if reclaimed, 'below_zone' if rejected>",
-  "statusText": "<one line plain English status, e.g. 'Price is 0.3% below the decision zone — watching for approach'>",
-  "reasoning": "<2-3 sentences in plain English explaining WHY this zone matters. No jargon. Example: 'This is where sellers defended the last breakdown. Trapped buyers from the spike are still underwater here. If price returns, they'll want to exit — creating pressure.'>",
+  "zoneTags": [
+    "<descriptive tags about this zone - pick ALL that apply from: 'Prior Support', 'Prior Resistance', 'Breakdown Origin', 'Rally Origin', 'Mid-range', 'Chop Zone', 'HTF Level', 'Recent Consolidation'>"
+  ],
+  "currentPrice": <number>,
+  "status": "<'waiting', 'at_zone', 'above_zone', or 'below_zone'>",
+  "statusText": "<one line status in plain English>",
+  "reasoning": "<2-3 sentences explaining WHAT HAPPENED at this zone before. Be specific: 'Price rejected here twice yesterday' or 'This is where the big drop started on Dec 5th' — NOT generic 'bulls and bears are fighting'>",
+  "skipConditions": [
+    "<when to skip this zone - e.g. 'Price keeps wicking through zone on both sides'>",
+    "<e.g. 'No clean break + retest develops'>",
+    "<e.g. 'Zone is mid-range with no historical significance'>"
+  ],
   "shortScenario": {
-    "trigger": "<plain English trigger, e.g. 'Price enters zone, shows hesitation, falls back below, weak bounce fails'>",
-    "entry": "<plain English entry, e.g. 'On the failed retest after rejection'>",
-    "stopLoss": <number - price level>,
-    "target1": <number - conservative target>,
-    "target2": <number - aggressive target>,
-    "riskReward": "<e.g. '2.5:1'>"
+    "trigger": "<what price behavior triggers a short, e.g. 'Price enters zone, stalls, falls back below with conviction'>",
+    "entry": "<where to enter, e.g. 'On the failed retest of zone bottom'>",
+    "stopLoss": <number - find the nearest swing HIGH above zone for stop>,
+    "stopReason": "<why this stop level, e.g. 'Above the swing high at $X visible on chart'>",
+    "target1": <number - find the nearest prior LOW or support for TP1>,
+    "target1Reason": "<why this target, e.g. 'Prior low from earlier today'>",
+    "target2": <number - find the next structural level below for TP2>,
+    "target2Reason": "<why this target, e.g. 'Major support from yesterday'>",
+    "riskReward": "<calculated from structure, not forced to 2:1>"
   },
   "longScenario": {
-    "trigger": "<plain English trigger, e.g. 'Price breaks above zone, pulls back, holds above'>",
-    "entry": "<plain English entry, e.g. 'On successful retest and hold'>",
-    "stopLoss": <number - price level>,
-    "target1": <number - conservative target>,
-    "target2": <number - aggressive target>,
-    "riskReward": "<e.g. '3:1'>"
+    "trigger": "<what price behavior triggers a long>",
+    "entry": "<where to enter>",
+    "stopLoss": <number - find the nearest swing LOW below zone for stop>,
+    "stopReason": "<why this stop level>",
+    "target1": <number - find the nearest prior HIGH or resistance for TP1>,
+    "target1Reason": "<why this target>",
+    "target2": <number - find the next structural level above for TP2>,
+    "target2Reason": "<why this target>",
+    "riskReward": "<calculated from structure>"
   },
   "watchFor": [
-    "<specific thing to watch, e.g. 'Does BTC push into the $90.2K zone?'>",
-    "<another specific thing>",
-    "<max 4 items>"
+    "<specific thing to watch>",
+    "<max 3 items>"
   ],
   "avoidDoing": [
-    "<thing to avoid, e.g. 'Trading before price reaches the zone'>",
-    "<another thing to avoid>",
+    "<thing to avoid>",
     "<max 3 items>"
   ],
   "bias": "<'neutral', 'lean_bullish', or 'lean_bearish'>",
-  "biasReason": "<one sentence explaining bias based on chart structure>"
+  "biasReason": "<one sentence explaining bias>"
 }
 
-IMPORTANT:
-- Use round numbers for price levels
-- Keep all text in plain English, no trading jargon
-- Be specific with price levels based on what you see
-- The zone should be a RANGE, not a single price
-- Focus on actionable information only`;
+CRITICAL RULES:
+- Stop losses come from STRUCTURE (nearest swing high/low), not arbitrary distances
+- Targets come from STRUCTURE (prior highs/lows, support/resistance), not fixed R:R
+- Be honest in zoneTags — if it's mid-range chop, say "Mid-range" + "Chop Zone"
+- The reasoning must explain what HAPPENED at this zone, not what MIGHT happen
+- Include skipConditions so user knows when to sit out`;
 
 /**
  * Step 1: Get structured text analysis (fast, reliable)
@@ -154,12 +179,34 @@ export async function analyzeChartStructured(imageBase64: string, userPrompt?: s
       
       return {
         zone: analysis.zone || { high: 0, low: 0, label: "" },
+        zoneTags: analysis.zoneTags || [],
         currentPrice: analysis.currentPrice || 0,
         status: analysis.status || "waiting",
         statusText: analysis.statusText || "",
         reasoning: analysis.reasoning || "",
-        shortScenario: analysis.shortScenario || createEmptyScenario(),
-        longScenario: analysis.longScenario || createEmptyScenario(),
+        skipConditions: analysis.skipConditions || [],
+        shortScenario: {
+          trigger: analysis.shortScenario?.trigger || "",
+          entry: analysis.shortScenario?.entry || "",
+          stopLoss: analysis.shortScenario?.stopLoss || 0,
+          stopReason: analysis.shortScenario?.stopReason || "",
+          target1: analysis.shortScenario?.target1 || 0,
+          target1Reason: analysis.shortScenario?.target1Reason || "",
+          target2: analysis.shortScenario?.target2 || 0,
+          target2Reason: analysis.shortScenario?.target2Reason || "",
+          riskReward: analysis.shortScenario?.riskReward || "",
+        },
+        longScenario: {
+          trigger: analysis.longScenario?.trigger || "",
+          entry: analysis.longScenario?.entry || "",
+          stopLoss: analysis.longScenario?.stopLoss || 0,
+          stopReason: analysis.longScenario?.stopReason || "",
+          target1: analysis.longScenario?.target1 || 0,
+          target1Reason: analysis.longScenario?.target1Reason || "",
+          target2: analysis.longScenario?.target2 || 0,
+          target2Reason: analysis.longScenario?.target2Reason || "",
+          riskReward: analysis.longScenario?.riskReward || "",
+        },
         watchFor: analysis.watchFor || [],
         avoidDoing: analysis.avoidDoing || [],
         bias: analysis.bias || "neutral",
@@ -182,7 +229,6 @@ export async function analyzeChartStructured(imageBase64: string, userPrompt?: s
 
 /**
  * Step 2: Generate annotated chart (separate query, can be slower)
- * This is called AFTER we have the analysis, with exact values to draw
  */
 export async function annotateChart(
   imageBase64: string, 
@@ -191,11 +237,9 @@ export async function annotateChart(
   const client = getAI();
   if (!client) return null;
 
-  // Create a very specific, focused prompt with exact values
   const annotationPrompt = createAnnotationPrompt(analysis);
 
-  // Try multiple models in order of preference
-  // gemini-3-pro-image-preview = Nano Banana Pro (works for image editing)
+  // gemini-3-pro-image-preview = Nano Banana Pro
   const models = [
     "gemini-3-pro-image-preview",
     "gemini-2.0-flash-exp-image-generation",
@@ -244,56 +288,49 @@ export async function annotateChart(
   return null;
 }
 
-/**
- * Create a focused, specific annotation prompt
- */
 function createAnnotationPrompt(analysis: ChartAnalysis): string {
   const { zone, shortScenario, longScenario } = analysis;
   
-  return `You are a chart annotation tool. Edit this trading chart image by drawing EXACTLY these elements:
+  return `Edit this trading chart by drawing these annotations:
 
-REQUIRED ANNOTATIONS:
+1. DECISION ZONE - Semi-transparent CYAN horizontal band:
+   - From $${zone.low.toLocaleString()} to $${zone.high.toLocaleString()}
+   - Label: "${zone.label || 'Zone'}"
 
-1. DECISION ZONE - Draw a semi-transparent horizontal band:
-   - Top edge at $${zone.high.toLocaleString()}
-   - Bottom edge at $${zone.low.toLocaleString()}
-   - Use CYAN color with ~30% opacity
-   - Span the full width of the chart
-   - Add small label "${zone.label || 'Zone'}" 
+2. SHORT LEVELS (left side):
+   - RED dashed line at $${shortScenario.stopLoss.toLocaleString()} (label: "SL")
+   - GREEN dashed lines at $${shortScenario.target1.toLocaleString()} ("TP1") and $${shortScenario.target2.toLocaleString()} ("TP2")
 
-2. SHORT SETUP (draw on LEFT side of chart):
-   - Small RED arrow pointing DOWN
-   - Thin RED horizontal dashed line at $${shortScenario.stopLoss.toLocaleString()} (label: "SL")
-   - Thin GREEN horizontal dashed line at $${shortScenario.target1.toLocaleString()} (label: "TP1")
-   - Thin GREEN horizontal dashed line at $${shortScenario.target2.toLocaleString()} (label: "TP2")
+3. LONG LEVELS (right side):
+   - RED dashed line at $${longScenario.stopLoss.toLocaleString()} (label: "SL")
+   - GREEN dashed lines at $${longScenario.target1.toLocaleString()} ("TP1") and $${longScenario.target2.toLocaleString()} ("TP2")
 
-3. LONG SETUP (draw on RIGHT side of chart):
-   - Small GREEN arrow pointing UP
-   - Thin RED horizontal dashed line at $${longScenario.stopLoss.toLocaleString()} (label: "SL")
-   - Thin GREEN horizontal dashed line at $${longScenario.target1.toLocaleString()} (label: "TP1")
-   - Thin GREEN horizontal dashed line at $${longScenario.target2.toLocaleString()} (label: "TP2")
-
-STYLE RULES:
-- Keep the original chart FULLY visible underneath
-- Use thin, clean lines (1-2px)
-- Labels should be small (8-10pt font)
-- Don't clutter - these are the ONLY annotations needed
-- Professional trading chart aesthetic
-
-Return the annotated chart image.`;
+Keep original chart visible. Use thin clean lines. Return annotated image.`;
 }
 
 function createEmptyScenario() {
-  return { trigger: "", entry: "", stopLoss: 0, target1: 0, target2: 0, riskReward: "" };
+  return { 
+    trigger: "", 
+    entry: "", 
+    stopLoss: 0, 
+    stopReason: "",
+    target1: 0, 
+    target1Reason: "",
+    target2: 0, 
+    target2Reason: "",
+    riskReward: "" 
+  };
 }
 
 function createEmptyAnalysis(error?: string): ChartAnalysis {
   return {
     zone: { high: 0, low: 0, label: "" },
+    zoneTags: [],
     currentPrice: 0,
     status: "waiting",
     statusText: error || "Unable to analyze",
     reasoning: "",
+    skipConditions: [],
     shortScenario: createEmptyScenario(),
     longScenario: createEmptyScenario(),
     watchFor: [],

@@ -14,13 +14,15 @@ import {
   EyeOff,
   ArrowRight,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  Ban,
+  Tag
 } from "lucide-react";
 import { ChartAnalysis } from "@/lib/chart-analysis";
 
 interface ChartAnalystCardProps {
   analysis: ChartAnalysis;
-  originalChart: string; // base64
+  originalChart: string;
   annotatedChart: string | null;
   annotationStatus: "loading" | "ready" | "failed";
   onPrepareShort: (setup: TradeSetup) => void;
@@ -36,6 +38,35 @@ export interface TradeSetup {
   target2: number;
   trigger: string;
   zone: { high: number; low: number };
+}
+
+// Zone tag colors
+const TAG_COLORS: Record<string, string> = {
+  "Prior Support": "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  "Prior Resistance": "bg-rose-500/10 text-rose-400 border-rose-500/20",
+  "Breakdown Origin": "bg-rose-500/10 text-rose-400 border-rose-500/20",
+  "Rally Origin": "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  "Mid-range": "bg-amber-500/10 text-amber-400 border-amber-500/20",
+  "Chop Zone": "bg-amber-500/10 text-amber-400 border-amber-500/20",
+  "HTF Level": "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
+  "Recent Consolidation": "bg-[#2d2e2f] text-[#9a9b9c] border-[#3d3e3f]",
+};
+
+function ZoneTags({ tags }: { tags: string[] }) {
+  if (!tags || tags.length === 0) return null;
+  
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {tags.map((tag, i) => (
+        <span 
+          key={i}
+          className={`px-2 py-0.5 rounded-md text-xs border ${TAG_COLORS[tag] || TAG_COLORS["Recent Consolidation"]}`}
+        >
+          {tag}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function StatusBadge({ status, text }: { status: string; text: string }) {
@@ -60,11 +91,13 @@ function StatusBadge({ status, text }: { status: string; text: string }) {
 function CollapsibleSection({ 
   title, 
   children, 
-  defaultOpen = false 
+  defaultOpen = false,
+  icon,
 }: { 
   title: string; 
   children: React.ReactNode; 
   defaultOpen?: boolean;
+  icon?: React.ReactNode;
 }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   
@@ -74,7 +107,10 @@ function CollapsibleSection({
         onClick={() => setIsOpen(!isOpen)}
         className="w-full flex items-center justify-between px-4 py-3 bg-[#1a1b1b] hover:bg-[#1e1f20] transition-colors"
       >
-        <span className="text-sm text-[#9a9b9c]">{title}</span>
+        <div className="flex items-center gap-2">
+          {icon}
+          <span className="text-sm text-[#9a9b9c]">{title}</span>
+        </div>
         {isOpen ? (
           <ChevronUp className="w-4 h-4 text-[#6b6c6d]" />
         ) : (
@@ -127,25 +163,33 @@ function ScenarioCard({
           <div className="text-sm text-[#e8e8e8]">{scenario.entry}</div>
         </div>
         
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <div className="text-xs text-[#6b6c6d] mb-1">Stop Loss</div>
-            <div className="text-sm text-[#e8e8e8] font-mono">${scenario.stopLoss.toLocaleString()}</div>
+        {/* Stop Loss with reason */}
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-[#6b6c6d]">Stop Loss</span>
+            <span className={`text-sm font-mono text-${color}-400`}>{scenario.riskReward}</span>
           </div>
-          <div>
-            <div className="text-xs text-[#6b6c6d] mb-1">R:R</div>
-            <div className={`text-sm font-mono text-${color}-400`}>{scenario.riskReward}</div>
-          </div>
+          <div className="text-sm text-[#e8e8e8] font-mono">${scenario.stopLoss.toLocaleString()}</div>
+          {scenario.stopReason && (
+            <div className="text-xs text-[#6b6c6d] mt-0.5">{scenario.stopReason}</div>
+          )}
         </div>
         
+        {/* Targets with reasons */}
         <div className="grid grid-cols-2 gap-2">
           <div>
             <div className="text-xs text-[#6b6c6d] mb-1">Target 1</div>
             <div className="text-sm text-[#e8e8e8] font-mono">${scenario.target1.toLocaleString()}</div>
+            {scenario.target1Reason && (
+              <div className="text-xs text-[#6b6c6d] mt-0.5">{scenario.target1Reason}</div>
+            )}
           </div>
           <div>
             <div className="text-xs text-[#6b6c6d] mb-1">Target 2</div>
             <div className="text-sm text-[#e8e8e8] font-mono">${scenario.target2.toLocaleString()}</div>
+            {scenario.target2Reason && (
+              <div className="text-xs text-[#6b6c6d] mt-0.5">{scenario.target2Reason}</div>
+            )}
           </div>
         </div>
       </div>
@@ -176,17 +220,21 @@ export function ChartAnalystCard({
 }: ChartAnalystCardProps) {
   const [viewMode, setViewMode] = useState<"annotated" | "original">("annotated");
   
-  // Determine what chart to display based on view mode and availability
   const displayChart = viewMode === "annotated" && annotatedChart 
     ? annotatedChart 
     : originalChart;
   
   const showAnnotatedView = viewMode === "annotated" && annotationStatus === "ready" && annotatedChart;
   
-  // Format zone display
   const zoneDisplay = analysis.zone.high > 0 
     ? `$${analysis.zone.low.toLocaleString()} – $${analysis.zone.high.toLocaleString()}`
     : "See analysis";
+  
+  // Check if this is a "risky" zone based on tags
+  const hasChopRisk = analysis.zoneTags?.some(tag => 
+    tag.toLowerCase().includes("mid-range") || 
+    tag.toLowerCase().includes("chop")
+  );
   
   const handlePrepareShort = () => {
     onPrepareShort({
@@ -212,7 +260,7 @@ export function ChartAnalystCard({
     });
   };
 
-  // Fallback to raw analysis if structured parsing failed
+  // Fallback to raw analysis
   if (analysis.rawAnalysis) {
     return (
       <div className="animate-slide-up">
@@ -251,29 +299,34 @@ export function ChartAnalystCard({
     <div className="animate-slide-up">
       <div className="bg-[#1e1f20] border border-[#2d2e2f] rounded-2xl overflow-hidden">
         {/* Header */}
-        <div className="px-5 py-4 border-b border-[#2d2e2f] flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-cyan-500/10">
-              <Target className="w-5 h-5 text-cyan-400" />
-            </div>
-            <div>
-              <div className="font-medium text-[#e8e8e8]">Chart Analysis</div>
-              <div className="text-xs text-[#6b6c6d]">
-                Decision Zone: <span className="text-cyan-400 font-mono">{zoneDisplay}</span>
+        <div className="px-5 py-4 border-b border-[#2d2e2f]">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-cyan-500/10">
+                <Target className="w-5 h-5 text-cyan-400" />
+              </div>
+              <div>
+                <div className="font-medium text-[#e8e8e8]">Chart Analysis</div>
+                <div className="text-xs text-[#6b6c6d]">
+                  {analysis.zone.label}: <span className="text-cyan-400 font-mono">{zoneDisplay}</span>
+                </div>
               </div>
             </div>
+            <button onClick={onClose} className="p-2 hover:bg-[#242526] rounded-lg transition-colors">
+              <X className="w-4 h-4 text-[#6b6c6d]" />
+            </button>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-[#242526] rounded-lg transition-colors">
-            <X className="w-4 h-4 text-[#6b6c6d]" />
-          </button>
+          
+          {/* Zone Tags */}
+          {analysis.zoneTags && analysis.zoneTags.length > 0 && (
+            <ZoneTags tags={analysis.zoneTags} />
+          )}
         </div>
 
-        {/* Chart - Hero */}
+        {/* Chart */}
         <div className="border-b border-[#2d2e2f] bg-[#161717]">
-          {/* Tab switcher - always show */}
           <div className="px-5 pt-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              {/* Annotated tab */}
               <button
                 onClick={() => setViewMode("annotated")}
                 disabled={annotationStatus === "loading"}
@@ -305,7 +358,6 @@ export function ChartAnalystCard({
                 )}
               </button>
               
-              {/* Original tab */}
               <button
                 onClick={() => setViewMode("original")}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
@@ -319,41 +371,20 @@ export function ChartAnalystCard({
               </button>
             </div>
             
-            {/* Status indicator */}
-            {viewMode === "annotated" && (
-              <div className="text-xs flex items-center gap-1">
-                {annotationStatus === "loading" && (
-                  <span className="text-cyan-400/60 flex items-center gap-1">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                    Drawing zone & levels...
-                  </span>
-                )}
-                {annotationStatus === "ready" && (
-                  <span className="text-cyan-400 flex items-center gap-1">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400" />
-                    AI-drawn zone & levels
-                  </span>
-                )}
-                {annotationStatus === "failed" && (
-                  <span className="text-[#6b6c6d] flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" />
-                    Couldn&apos;t draw on chart
-                  </span>
-                )}
+            {viewMode === "annotated" && annotationStatus === "ready" && (
+              <div className="text-xs text-cyan-400 flex items-center gap-1">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                Levels drawn
               </div>
             )}
           </div>
           
           <div className="px-5 py-4 relative">
-            {/* Loading overlay when annotation is in progress and viewing annotated tab */}
             {annotationStatus === "loading" && viewMode === "annotated" && (
               <div className="absolute inset-5 flex items-center justify-center bg-[#161717]/80 backdrop-blur-sm rounded-lg z-10">
                 <div className="flex flex-col items-center gap-2">
-                  <div className="relative">
-                    <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
-                  </div>
-                  <span className="text-sm text-cyan-400">Drawing TA on chart...</span>
-                  <span className="text-xs text-[#6b6c6d]">Zone: {zoneDisplay}</span>
+                  <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
+                  <span className="text-sm text-cyan-400">Drawing levels...</span>
                 </div>
               </div>
             )}
@@ -367,17 +398,10 @@ export function ChartAnalystCard({
                   : "border-[#2d2e2f]"
               }`}
             />
-            
-            {/* Zone badge when showing annotated chart */}
-            {showAnnotatedView && (
-              <div className="absolute bottom-6 right-7 bg-[#161717]/90 backdrop-blur-sm px-2 py-1 rounded text-[10px] text-cyan-400 border border-cyan-500/20">
-                ✨ Zone: ${analysis.zone.low.toLocaleString()}–${analysis.zone.high.toLocaleString()}
-              </div>
-            )}
           </div>
         </div>
 
-        {/* Status Badge */}
+        {/* Status */}
         <div className="px-5 py-4 border-b border-[#2d2e2f]">
           <StatusBadge status={analysis.status} text={analysis.statusText} />
         </div>
@@ -391,7 +415,27 @@ export function ChartAnalystCard({
           </div>
         )}
 
-        {/* Two Scenarios - Side by Side */}
+        {/* Skip Conditions - NEW */}
+        {analysis.skipConditions && analysis.skipConditions.length > 0 && (
+          <div className="px-5 py-4 border-b border-[#2d2e2f]">
+            <CollapsibleSection 
+              title="When to skip this zone" 
+              defaultOpen={hasChopRisk}
+              icon={<Ban className="w-3.5 h-3.5 text-amber-400" />}
+            >
+              <ul className="space-y-2">
+                {analysis.skipConditions.map((condition, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm text-[#9a9b9c]">
+                    <span className="text-amber-400 mt-0.5">⚠</span>
+                    {condition}
+                  </li>
+                ))}
+              </ul>
+            </CollapsibleSection>
+          </div>
+        )}
+
+        {/* Two Scenarios */}
         <div className="px-5 py-4 border-b border-[#2d2e2f]">
           <div className="flex gap-3">
             <ScenarioCard
@@ -410,7 +454,7 @@ export function ChartAnalystCard({
         </div>
 
         {/* What to Watch For */}
-        {analysis.watchFor.length > 0 && (
+        {analysis.watchFor && analysis.watchFor.length > 0 && (
           <div className="px-5 py-4 border-b border-[#2d2e2f]">
             <CollapsibleSection title="What to watch for">
               <ul className="space-y-2">
@@ -426,7 +470,7 @@ export function ChartAnalystCard({
         )}
 
         {/* What NOT to Do */}
-        {analysis.avoidDoing.length > 0 && (
+        {analysis.avoidDoing && analysis.avoidDoing.length > 0 && (
           <div className="px-5 py-4 border-b border-[#2d2e2f]">
             <CollapsibleSection title="What NOT to do">
               <ul className="space-y-2">
@@ -445,7 +489,7 @@ export function ChartAnalystCard({
         {analysis.biasReason && (
           <div className="px-5 py-3 bg-[#161717] border-t border-[#2d2e2f]">
             <div className="flex items-center gap-2 text-xs">
-              <span className="text-[#6b6c6d]">Current lean:</span>
+              <span className="text-[#6b6c6d]">Lean:</span>
               <span className={`font-medium ${
                 analysis.bias === "lean_bullish" ? "text-emerald-400" :
                 analysis.bias === "lean_bearish" ? "text-rose-400" :
