@@ -312,45 +312,36 @@ export function RouterPage() {
             {/* Suggestions - only show when no plan */}
             {!currentPlan && (
               <div className="space-y-4 mb-8">
-                {/* Vague ideas - the key insight */}
+                {/* Demo flow - ordered to show variety */}
                 <div>
-                  <div className="text-xs text-[#6b6c6d] uppercase tracking-wider mb-2">Start with an idea</div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="text-xs text-[#6b6c6d] uppercase tracking-wider mb-2">Try these examples</div>
+                  <div className="space-y-2">
                     {[
-                      "I think BTC is going to dump",
-                      "SOL looks weak here",
-                      "I want to fade this ETH rally",
-                    ].map((suggestion) => (
+                      { text: "I think BTC is going to dump", label: "1", desc: "Short trade" },
+                      { text: "SOL looks strong, I want to go long with $5k risk", label: "2", desc: "Long trade with risk" },
+                      { text: "Buy $50k of ETH slowly over 15 minutes", label: "3", desc: "Gradual entry" },
+                    ].map((suggestion, i) => (
                       <button
-                        key={suggestion}
-                        onClick={() => handleSuggestionClick(suggestion)}
-                        className="px-3 py-2 bg-[#242526] hover:bg-[#2d2e2f] border border-[#2d2e2f] rounded-xl text-sm text-[#9a9b9c] hover:text-[#e8e8e8] transition-colors"
+                        key={suggestion.text}
+                        onClick={() => handleSuggestionClick(suggestion.text)}
+                        className="w-full flex items-center gap-3 px-4 py-3 bg-[#242526] hover:bg-[#2d2e2f] border border-[#2d2e2f] rounded-xl text-left transition-colors group"
                       >
-                        {suggestion}
+                        <div className="w-6 h-6 rounded-full bg-[#20b2aa]/20 flex items-center justify-center text-xs font-semibold text-[#20b2aa] group-hover:bg-[#20b2aa]/30">
+                          {suggestion.label}
+                        </div>
+                        <div className="flex-1">
+                          <div className="text-sm text-[#e8e8e8]">{suggestion.text}</div>
+                          <div className="text-xs text-[#6b6c6d]">{suggestion.desc}</div>
+                        </div>
+                        <Sparkles className="w-4 h-4 text-[#6b6c6d] group-hover:text-[#20b2aa] transition-colors" />
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {/* More specific */}
-                <div>
-                  <div className="text-xs text-[#6b6c6d] uppercase tracking-wider mb-2">Or be more specific</div>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      "short BTC, max $3k risk",
-                      "long SOL if it holds 180",
-                      "accumulate ZEC slowly, $50k total",
-                    ].map((suggestion) => (
-                      <button
-                        key={suggestion}
-                        onClick={() => handleSuggestionClick(suggestion)}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-[#1e1f20] hover:bg-[#242526] border border-[#2d2e2f] rounded-xl text-sm text-[#6b6c6d] hover:text-[#9a9b9c] transition-colors"
-                      >
-                        <Sparkles className="w-3 h-3" />
-                        {suggestion}
-                      </button>
-                    ))}
-                  </div>
+                {/* Tip */}
+                <div className="text-xs text-[#6b6c6d] text-center">
+                  Click each example in order to see different trade types. After confirming, click &quot;Lock in these limits&quot; on the trade card.
                 </div>
               </div>
             )}

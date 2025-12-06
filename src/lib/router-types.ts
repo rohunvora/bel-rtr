@@ -140,7 +140,7 @@ export function parseRouterIntent(input: string): ParsedIntent {
   const isBullish = bullishWords.some(word => normalized.includes(word));
 
   // Detect TWAP intent
-  const twapWords = ["twap", "accumulate", "slowly", "gradual", "spread", "over time", "thin book", "books are thin"];
+  const twapWords = ["twap", "accumulate", "slowly", "gradual", "spread", "over time", "thin book", "books are thin", "over 15", "over 30", "minutes"];
   const isTwap = twapWords.some(word => normalized.includes(word)) || (notional && notional >= 10000);
 
   if (isTwap) {
