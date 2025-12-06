@@ -30,7 +30,7 @@ export function ToastContainer({ toasts, onRemove }: ToastProps) {
 
 function Toast({ toast, onRemove }: { toast: ToastMessage; onRemove: () => void }) {
   useEffect(() => {
-    const timer = setTimeout(onRemove, 2500); // 2.5s - snappy but readable
+    const timer = setTimeout(onRemove, 1500); // 1.5s - quick
     return () => clearTimeout(timer);
   }, [onRemove]);
 
