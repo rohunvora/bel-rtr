@@ -195,9 +195,10 @@ export async function annotateChart(
   const annotationPrompt = createAnnotationPrompt(analysis);
 
   // Try multiple models in order of preference
+  // gemini-3-pro-image-preview = Nano Banana Pro (works for image editing)
   const models = [
-    "gemini-2.0-flash-preview-image-generation",
-    "gemini-2.5-flash-preview-04-17",
+    "gemini-3-pro-image-preview",
+    "gemini-2.0-flash-exp-image-generation",
   ];
 
   for (const model of models) {
