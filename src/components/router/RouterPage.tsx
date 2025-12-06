@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { ArrowUp, Coins, Vote, Building2, Wifi, WifiOff } from "lucide-react";
+import { ArrowUp, Coins, Vote, Building2, Wifi, WifiOff, Target, Layers, Sparkles } from "lucide-react";
+import { Sidebar } from "@/components/Sidebar";
 import { TradePlanCard, TwapPlanCard } from "./TradePlanCard";
-import { PortfolioCard } from "./PortfolioCard";
+import { TradeCard } from "./TradeCard";
 import { LockRiskModal } from "./LockRiskModal";
-import { PredictionCard, StockCard, ThesisExplorerCard } from "./modals";
+import { PredictionCard, StockCard, ThesisExplorerCard, TargetTradeCard, PortfolioActionCard } from "./modals";
 import { ToastContainer, ToastMessage } from "@/components/Toast";
 import { FlashingPrice } from "@/components/AnimatedPrice";
 import { useLivePrices } from "@/lib/use-live-prices";
@@ -22,7 +23,7 @@ import {
 // Union type for all plans
 type AnyPlan = TradePlan | PredictionPlan | StockPlan;
 
-// Simplified plan types for modal state (without id, createdAt, status, prompt, marketType)
+// Simplified plan types for modal state
 type CryptoPlan = {
   market: string;
   direction: "long" | "short";
@@ -53,25 +54,18 @@ type ModalState =
   | { type: "twap"; plan: TwapPlanInput; prompt: string }
   | { type: "prediction"; market: string; platform: "polymarket" | "kalshi"; odds: number; prompt: string }
   | { type: "stock"; ticker: string; company: string; price: number; thesis: string; prompt: string }
-  | { type: "thesis"; thesis: string; sentiment: "bullish" | "bearish"; prompt: string };
+  | { type: "thesis"; thesis: string; sentiment: "bullish" | "bearish"; prompt: string }
+  | { type: "target"; symbol: string; targetPrice: number; deadline?: string; prompt: string }
+  | { type: "portfolio_action"; action: "reduce" | "hedge" | "close_all"; prompt: string };
 
-// Examples that showcase range
+// Rich examples showing variety
 const EXAMPLES = [
-  { 
-    text: "I think BTC is going to dump", 
-    type: "crypto" as const,
-    desc: "Crypto perpetual" 
-  },
-  { 
-    text: "Lakers win tonight", 
-    type: "prediction" as const,
-    desc: "Prediction market" 
-  },
-  { 
-    text: "Peptides are the future", 
-    type: "stock" as const,
-    desc: "Stock trade" 
-  },
+  { text: "I think BTC is going to dump", type: "crypto" as const, icon: Coins, color: "text-[#20b2aa] bg-[#20b2aa]/10" },
+  { text: "ETH to 5000 by March", type: "target" as const, icon: Target, color: "text-amber-400 bg-amber-500/10" },
+  { text: "Lakers win tonight", type: "prediction" as const, icon: Vote, color: "text-purple-400 bg-purple-500/10" },
+  { text: "Peptides are the future", type: "stock" as const, icon: Building2, color: "text-blue-400 bg-blue-500/10" },
+  { text: "AI is overhyped", type: "thesis" as const, icon: Sparkles, color: "text-pink-400 bg-pink-500/10" },
+  { text: "Cut my risk in half", type: "portfolio" as const, icon: Layers, color: "text-orange-400 bg-orange-500/10" },
 ];
 
 // Stock thesis mapping
@@ -79,7 +73,6 @@ const STOCK_THESES: Record<string, { ticker: string; company: string; price: num
   "peptide": { ticker: "LLY", company: "Eli Lilly", price: 782.50, thesis: "Eli Lilly makes Mounjaro, the leading GLP-1 weight loss drug. Up 60% YTD on peptide demand." },
   "ozempic": { ticker: "NVO", company: "Novo Nordisk", price: 125.30, thesis: "Novo Nordisk makes Ozempic and Wegovy. Dominant in the GLP-1 market." },
   "weight loss": { ticker: "LLY", company: "Eli Lilly", price: 782.50, thesis: "Eli Lilly is the market leader in GLP-1 weight loss drugs with Mounjaro." },
-  "ai overhyped": { ticker: "NVDA", company: "NVIDIA", price: 142.50, thesis: "NVIDIA is the AI chip leader. If AI is overhyped, this has the most downside." },
 };
 
 // Prediction market mapping  
@@ -91,12 +84,50 @@ const PREDICTION_MARKETS: Record<string, { market: string; platform: "polymarket
   "bitcoin 100k": { market: "Bitcoin above $100k by EOY", platform: "polymarket", odds: 0.65 },
 };
 
+// Demo positions to show on load
+function createDemoPositions(prices: Record<string, { price: number }>): AnyPlan[] {
+  const btcPrice = prices["BTC"]?.price || 97000;
+  const ethPrice = prices["ETH"]?.price || 3600;
+  
+  return [
+    {
+      id: "demo-1",
+      prompt: "BTC looks weak here, thinking we see 90k before 100k",
+      marketType: "crypto" as const,
+      market: "BTC-PERP",
+      direction: "short" as const,
+      maxRisk: 3000,
+      stopPrice: Math.round(btcPrice * 1.025),
+      size: 2.1,
+      sizeUnit: "BTC",
+      entryPrice: Math.round(btcPrice * 1.01),
+      leverage: 2.3,
+      status: "confirmed" as const,
+      createdAt: new Date(Date.now() - 45 * 60000).toISOString(), // 45 mins ago
+    },
+    {
+      id: "demo-2",
+      prompt: "Peptides are going to be huge next year",
+      marketType: "stock" as const,
+      ticker: "LLY",
+      companyName: "Eli Lilly",
+      direction: "long" as const,
+      amount: 2500,
+      currentPrice: 782.50,
+      externalUrl: "https://robinhood.com/stocks/LLY",
+      platform: "robinhood" as const,
+      status: "confirmed" as const,
+      createdAt: new Date(Date.now() - 120 * 60000).toISOString(), // 2 hrs ago
+    },
+  ];
+}
+
 function createTradePlan(
   market: string,
   direction: "long" | "short",
   price: number,
   risk: number = 3000
-): Omit<TradePlan, "id" | "createdAt" | "status" | "prompt" | "marketType"> {
+): CryptoPlan {
   const symbol = market.split("-")[0];
   const stopDistance = price * 0.02;
   const stopPrice = direction === "long" 
@@ -126,8 +157,17 @@ export function RouterPage() {
   const [lockTarget, setLockTarget] = useState<TradePlan | null>(null);
   const [showLockModal, setShowLockModal] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [initialized, setInitialized] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
+
+  // Initialize demo positions once prices are loaded
+  useEffect(() => {
+    if (!initialized && prices["BTC"] && prices["ETH"]) {
+      setPortfolio(createDemoPositions(prices));
+      setInitialized(true);
+    }
+  }, [prices, initialized]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -156,6 +196,32 @@ export function RouterPage() {
   // Intent detection
   const processInput = useCallback((text: string) => {
     const lower = text.toLowerCase();
+
+    // Check for portfolio management keywords
+    if (lower.includes("cut") && (lower.includes("risk") || lower.includes("exposure") || lower.includes("half"))) {
+      setModalState({ type: "portfolio_action", action: "reduce", prompt: text });
+      return;
+    }
+    if (lower.includes("close all") || lower.includes("exit everything")) {
+      setModalState({ type: "portfolio_action", action: "close_all", prompt: text });
+      return;
+    }
+
+    // Check for target price patterns
+    const targetMatch = lower.match(/(btc|eth|sol)\s+(?:to|at|hits?)\s+(\d+(?:k)?)/i);
+    if (targetMatch) {
+      const symbol = targetMatch[1].toUpperCase();
+      let targetPrice = parseFloat(targetMatch[2].replace("k", "000"));
+      const deadlineMatch = lower.match(/by\s+(january|february|march|april|may|june|july|august|september|october|november|december|eoy|end of year)/i);
+      setModalState({ 
+        type: "target", 
+        symbol, 
+        targetPrice, 
+        deadline: deadlineMatch?.[1],
+        prompt: text 
+      });
+      return;
+    }
 
     // Check for prediction market keywords
     for (const [keyword, data] of Object.entries(PREDICTION_MARKETS)) {
@@ -187,8 +253,8 @@ export function RouterPage() {
     }
 
     // Check for thesis explorer patterns
-    if (lower.includes("overhyped") || lower.includes("overvalued") || lower.includes("undervalued")) {
-      const sentiment = lower.includes("overhyped") || lower.includes("overvalued") ? "bearish" : "bullish";
+    if (lower.includes("overhyped") || lower.includes("overvalued") || lower.includes("undervalued") || lower.includes("bullish on") || lower.includes("bearish on")) {
+      const sentiment = lower.includes("overhyped") || lower.includes("overvalued") || lower.includes("bearish") ? "bearish" : "bullish";
       setModalState({ type: "thesis", thesis: text, sentiment, prompt: text });
       return;
     }
@@ -261,7 +327,7 @@ export function RouterPage() {
     setInput("");
   }, []);
 
-  // Confirm handlers for each type
+  // Confirm handlers
   const handleConfirmCrypto = useCallback((plan: TradePlan) => {
     setPortfolio((prev) => [plan, ...prev]);
     clearModal();
@@ -269,7 +335,6 @@ export function RouterPage() {
   }, [addToast, clearModal]);
 
   const handleConfirmTwap = useCallback((plan: TwapPlan) => {
-    // Convert to TradePlan for portfolio display
     const tradePlan: TradePlan = {
       id: plan.id,
       prompt: plan.prompt,
@@ -302,6 +367,12 @@ export function RouterPage() {
     addToast("success", `${plan.direction.toUpperCase()} ${plan.ticker}`, plan.companyName);
   }, [addToast, clearModal]);
 
+  const handleConfirmTarget = useCallback((plan: TradePlan) => {
+    setPortfolio((prev) => [plan, ...prev]);
+    clearModal();
+    addToast("success", `Target trade confirmed`, plan.market);
+  }, [addToast, clearModal]);
+
   const handleThesisSelect = useCallback((instrument: { symbol: string; name: string; direction: "long" | "short" }) => {
     const prompt = modalState.type === "thesis" ? modalState.prompt : "";
     const mockPrices: Record<string, number> = { "NVDA": 142, "MSFT": 420, "LLY": 782, "NVO": 125 };
@@ -310,7 +381,7 @@ export function RouterPage() {
     const plan: TradePlan = {
       id: `thesis-${Date.now()}`,
       prompt,
-      marketType: "crypto", // Using crypto type for display
+      marketType: "crypto",
       market: `${instrument.symbol}-STOCK`,
       direction: instrument.direction,
       maxRisk: 3000,
@@ -327,6 +398,11 @@ export function RouterPage() {
     clearModal();
     addToast("success", `${instrument.direction.toUpperCase()} ${instrument.symbol}`, instrument.name);
   }, [addToast, clearModal, modalState]);
+
+  const handlePortfolioAction = useCallback(() => {
+    clearModal();
+    addToast("success", "Portfolio updated", "Changes applied");
+  }, [addToast, clearModal]);
 
   const handleRemove = useCallback((id: string) => {
     setPortfolio((prev) => prev.filter((p) => p.id !== id));
@@ -372,25 +448,65 @@ export function RouterPage() {
     ];
   };
 
-  const hasPositions = portfolio.length > 0;
+  // Calculate portfolio stats
+  const portfolioStats = {
+    totalExposure: portfolio.reduce((acc, p) => {
+      if ('leverage' in p && 'size' in p && 'entryPrice' in p) {
+        return acc + (p as TradePlan).size * (p as TradePlan).entryPrice;
+      }
+      if ('amount' in p) return acc + p.amount;
+      return acc;
+    }, 0),
+    positions: portfolio.map(p => ({
+      market: 'market' in p ? p.market : ('ticker' in p ? (p as StockPlan).ticker : ""),
+      size: 'size' in p ? (p as TradePlan).size : 0,
+      pnl: Math.random() * 1000 - 300, // Mock P&L
+    })),
+  };
 
   return (
-    <div className="min-h-screen bg-[#191a1a]">
-      {/* Simple header */}
-      <header className="border-b border-[#2d2e2f]">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-[#20b2aa]/20 flex items-center justify-center">
-              <span className="text-[#20b2aa] font-bold text-sm">R</span>
-            </div>
-            <span className="font-semibold text-[#e8e8e8]">Router</span>
+    <div className="flex h-screen bg-[#191a1a]">
+      {/* Sidebar with portfolio */}
+      <Sidebar>
+        <div className="p-3 border-b border-[#2d2e2f]">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-[#6b6c6d] uppercase tracking-wider">Portfolio</span>
+            <span className="text-xs text-[#6b6c6d]">{portfolio.length} active</span>
           </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {portfolio.length === 0 ? (
+            <div className="text-center py-8 text-xs text-[#6b6c6d]">
+              No positions yet
+            </div>
+          ) : (
+            portfolio.map((plan) => (
+              <TradeCard
+                key={plan.id}
+                plan={plan}
+                onRemove={() => handleRemove(plan.id)}
+                onLockRisk={'leverage' in plan ? () => handleLockRisk(plan.id) : undefined}
+              />
+            ))
+          )}
+        </div>
+      </Sidebar>
+
+      {/* Main content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header with live prices */}
+        <header className="h-14 border-b border-[#2d2e2f] flex items-center justify-between px-6">
+          <h1 className="text-[#e8e8e8] font-medium">Trade</h1>
           
-          {/* Live prices */}
           <div className="flex items-center gap-6">
             {["BTC", "ETH", "SOL"].map((symbol) => {
               const priceData = prices[symbol];
-              if (!priceData) return null;
+              if (!priceData) return (
+                <div key={symbol} className="flex items-center gap-2 text-sm">
+                  <span className="text-[#6b6c6d]">{symbol}</span>
+                  <span className="text-[#4a4b4c] font-mono">---</span>
+                </div>
+              );
               return (
                 <div key={symbol} className="flex items-center gap-2 text-sm">
                   <span className="text-[#6b6c6d]">{symbol}</span>
@@ -402,74 +518,70 @@ export function RouterPage() {
                 </div>
               );
             })}
-            <div className={`flex items-center gap-1 text-xs ${isConnected ? "text-[#20b2aa]" : "text-[#6b6c6d]"}`}>
+            <div className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs ${
+              isConnected ? "text-[#20b2aa] bg-[#20b2aa]/10" : "text-[#6b6c6d] bg-[#2d2e2f]"
+            }`}>
               {isConnected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+              <span>{isConnected ? "Live" : "Connecting"}</span>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <div className="max-w-6xl mx-auto px-6 py-8">
-        <div className="flex gap-8">
-          {/* Main area */}
-          <div className="flex-1">
-            {/* Hero */}
+        {/* Main area */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-3xl mx-auto px-6 py-8">
+            {/* Hero when no modal */}
             {modalState.type === "none" && (
-              <div className="mb-8">
-                <h1 className="text-3xl font-semibold text-[#e8e8e8] mb-2">
+              <div className="mb-6">
+                <h2 className="text-2xl font-semibold text-[#e8e8e8] mb-1">
                   What do you think is going to happen?
-                </h1>
+                </h2>
                 <p className="text-[#6b6c6d]">
-                  Type any view — crypto, stocks, sports, politics. We&apos;ll help you trade it.
+                  Type any view — we&apos;ll help you trade it.
                 </p>
               </div>
             )}
 
             {/* Input */}
             <div className="relative mb-6">
-              <div className="bg-[#1e1f20] border border-[#2d2e2f] rounded-2xl overflow-hidden focus-within:border-[#3d3e3f] transition-colors">
+              <div className="bg-[#1e1f20] border border-[#2d2e2f] rounded-xl overflow-hidden focus-within:border-[#3d3e3f] transition-colors">
                 <textarea
                   ref={textareaRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="BTC is going to dump... Lakers win tonight... Peptides are the future..."
+                  placeholder="BTC is going to dump... ETH to 5000 by March... Lakers win tonight..."
                   rows={1}
-                  className="w-full bg-transparent text-[#e8e8e8] placeholder-[#6b6c6d] px-5 py-4 pr-14 resize-none focus:outline-none text-lg"
-                  style={{ minHeight: "60px" }}
+                  className="w-full bg-transparent text-[#e8e8e8] placeholder-[#4a4b4c] px-4 py-3.5 pr-14 resize-none focus:outline-none"
+                  style={{ minHeight: "52px" }}
                 />
                 <button
                   onClick={handleSubmit}
                   disabled={!input.trim()}
-                  className={`absolute right-3 bottom-3 p-3 rounded-xl transition-all ${
-                    input.trim() ? "bg-[#20b2aa] hover:bg-[#2cc5bc] text-white" : "bg-[#2d2e2f] text-[#6b6c6d]"
+                  className={`absolute right-2.5 bottom-2.5 p-2.5 rounded-lg transition-all ${
+                    input.trim() ? "bg-[#20b2aa] hover:bg-[#2cc5bc] text-white" : "bg-[#2d2e2f] text-[#4a4b4c]"
                   }`}
                 >
-                  <ArrowUp className="w-5 h-5" />
+                  <ArrowUp className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            {/* Examples - only when no modal */}
+            {/* Examples */}
             {modalState.type === "none" && (
               <div className="mb-8">
                 <div className="text-xs text-[#6b6c6d] uppercase tracking-wider mb-3">Try these</div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   {EXAMPLES.map((ex, i) => {
-                    const Icon = ex.type === "crypto" ? Coins : ex.type === "prediction" ? Vote : Building2;
-                    const colors = {
-                      crypto: "text-[#20b2aa] bg-[#20b2aa]/10",
-                      prediction: "text-purple-400 bg-purple-500/10",
-                      stock: "text-blue-400 bg-blue-500/10",
-                    };
+                    const Icon = ex.icon;
                     return (
                       <button
                         key={i}
                         onClick={() => handleExampleClick(ex)}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-[#1e1f20] hover:bg-[#242526] border border-[#2d2e2f] rounded-xl transition-colors"
+                        className="flex items-center gap-2 px-3 py-2 bg-[#1e1f20] hover:bg-[#242526] border border-[#2d2e2f] rounded-lg transition-colors"
                       >
-                        <div className={`p-1.5 rounded-lg ${colors[ex.type]}`}>
-                          <Icon className="w-3.5 h-3.5" />
+                        <div className={`p-1 rounded ${ex.color}`}>
+                          <Icon className="w-3 h-3" />
                         </div>
                         <span className="text-sm text-[#9a9b9c]">{ex.text}</span>
                       </button>
@@ -528,45 +640,27 @@ export function RouterPage() {
                     onCancel={clearModal}
                   />
                 )}
-              </div>
-            )}
-          </div>
-
-          {/* Portfolio sidebar */}
-          <div className="w-80 flex-shrink-0">
-            <div className="sticky top-8">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold text-[#e8e8e8]">Your Positions</h2>
-                {hasPositions && (
-                  <span className="text-xs text-[#6b6c6d]">{portfolio.length} active</span>
+                {modalState.type === "target" && (
+                  <TargetTradeCard
+                    prompt={modalState.prompt}
+                    symbol={modalState.symbol}
+                    targetPrice={modalState.targetPrice}
+                    deadline={modalState.deadline}
+                    onConfirm={handleConfirmTarget}
+                    onCancel={clearModal}
+                  />
+                )}
+                {modalState.type === "portfolio_action" && (
+                  <PortfolioActionCard
+                    action={modalState.action}
+                    currentExposure={portfolioStats.totalExposure}
+                    positions={portfolioStats.positions}
+                    onConfirm={handlePortfolioAction}
+                    onCancel={clearModal}
+                  />
                 )}
               </div>
-
-              {!hasPositions ? (
-                <div className="text-center py-12 px-4 bg-[#1e1f20] rounded-xl border border-[#2d2e2f]">
-                  <div className="text-[#6b6c6d] mb-2">No positions yet</div>
-                  <div className="text-xs text-[#6b6c6d]">
-                    Type a view to get started
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {portfolio.map((plan) => (
-                    <PortfolioCard
-                      key={plan.id}
-                      plan={plan}
-                      onRemove={() => handleRemove(plan.id)}
-                      onLockRisk={'leverage' in plan ? () => handleLockRisk(plan.id) : undefined}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {/* Demo notice */}
-              <div className="mt-4 text-xs text-[#6b6c6d] text-center">
-                Demo only • No real trades
-              </div>
-            </div>
+            )}
           </div>
         </div>
       </div>

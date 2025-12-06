@@ -1,4 +1,4 @@
 export { RouterPage } from "./RouterPage";
 export { TradePlanCard, TwapPlanCard } from "./TradePlanCard";
-export { PortfolioCard } from "./PortfolioCard";
+export { TradeCard } from "./TradeCard";
 export { LockRiskModal } from "./LockRiskModal";

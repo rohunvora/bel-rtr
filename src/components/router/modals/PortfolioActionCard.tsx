@@ -1,264 +1,137 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { Check, TrendingUp, TrendingDown, ArrowRight, Zap, X, Plus, Minus } from "lucide-react";
-import { TradePlan, formatCurrency, formatNumber } from "@/lib/router-types";
-import { useLivePrices } from "@/lib/use-live-prices";
+import { useState } from "react";
+import { Check, Layers, TrendingDown, DollarSign, Shield, ArrowRight } from "lucide-react";
+import { formatCurrency } from "@/lib/router-types";
 
 interface PortfolioActionCardProps {
-  action: "cut_losers_double_winners" | "close_all" | "reduce_risk" | "take_profit";
-  positions: TradePlan[];
-  onExecute: (changes: PositionChange[]) => void;
+  action: "reduce" | "hedge" | "close_all";
+  currentExposure: number;
+  positions: Array<{ market: string; size: number; pnl: number }>;
+  onConfirm: () => void;
   onCancel: () => void;
 }
 
-interface PositionChange {
-  position: TradePlan;
-  action: "close" | "increase" | "decrease";
-  newSize?: number;
-  reason: string;
-}
-
-export function PortfolioActionCard({ action, positions, onExecute, onCancel }: PortfolioActionCardProps) {
-  const { prices } = useLivePrices();
+export function PortfolioActionCard({ action, currentExposure, positions, onConfirm, onCancel }: PortfolioActionCardProps) {
   const [confirmed, setConfirmed] = useState(false);
+  const [reductionPercent, setReductionPercent] = useState(50);
 
-  // Calculate P&L for each position
-  const positionsWithPnl = useMemo(() => {
-    return positions.map(pos => {
-      const currentPrice = prices[pos.sizeUnit]?.price || pos.entryPrice;
-      const priceDiff = currentPrice - pos.entryPrice;
-      const pnl = priceDiff * pos.size * (pos.direction === "long" ? 1 : -1);
-      const pnlPercent = (pnl / pos.maxRisk) * 100;
-      return { ...pos, currentPrice, pnl, pnlPercent };
-    });
-  }, [positions, prices]);
-
-  // Determine changes based on action type
-  const changes = useMemo((): PositionChange[] => {
-    switch (action) {
-      case "cut_losers_double_winners": {
-        const losers = positionsWithPnl.filter(p => p.pnl < 0);
-        const winners = positionsWithPnl.filter(p => p.pnl > 0);
-        return [
-          ...losers.map(p => ({ 
-            position: p, 
-            action: "close" as const, 
-            reason: `Losing ${formatCurrency(Math.abs(p.pnl))}` 
-          })),
-          ...winners.map(p => ({ 
-            position: p, 
-            action: "increase" as const, 
-            newSize: p.size * 2,
-            reason: `Up ${formatCurrency(p.pnl)}` 
-          })),
-        ];
-      }
-      case "close_all":
-        return positionsWithPnl.map(p => ({ 
-          position: p, 
-          action: "close" as const, 
-          reason: "Close all" 
-        }));
-      case "reduce_risk":
-        return positionsWithPnl.map(p => ({ 
-          position: p, 
-          action: "decrease" as const, 
-          newSize: p.size * 0.5,
-          reason: "Reduce 50%" 
-        }));
-      case "take_profit":
-        return positionsWithPnl
-          .filter(p => p.pnl > 0)
-          .map(p => ({ 
-            position: p, 
-            action: "decrease" as const, 
-            newSize: p.size * 0.5,
-            reason: `Take ${formatCurrency(p.pnl * 0.5)} profit` 
-          }));
-      default:
-        return [];
-    }
-  }, [action, positionsWithPnl]);
-
-  const closingPositions = changes.filter(c => c.action === "close");
-  const increasingPositions = changes.filter(c => c.action === "increase");
-  const decreasingPositions = changes.filter(c => c.action === "decrease");
-
-  const totalRealizedPnl = closingPositions.reduce((sum, c) => {
-    const pos = c.position as typeof positionsWithPnl[0];
-    return sum + (pos.pnl || 0);
-  }, 0);
-
-  const actionTitles = {
-    cut_losers_double_winners: "Cut losers, double winners",
-    close_all: "Close all positions",
-    reduce_risk: "Reduce risk by 50%",
-    take_profit: "Take profit on winners",
+  const actionConfig = {
+    reduce: {
+      icon: TrendingDown,
+      title: "Reduce Exposure",
+      desc: "Scale down all positions proportionally",
+      color: "text-orange-400",
+      bgColor: "bg-orange-500/10",
+      buttonText: "Reduce Positions",
+      buttonColor: "bg-orange-500 hover:bg-orange-400",
+    },
+    hedge: {
+      icon: Shield,
+      title: "Add Protection",
+      desc: "Open hedging positions to limit downside",
+      color: "text-blue-400",
+      bgColor: "bg-blue-500/10",
+      buttonText: "Add Hedge",
+      buttonColor: "bg-blue-500 hover:bg-blue-400",
+    },
+    close_all: {
+      icon: DollarSign,
+      title: "Close All Positions",
+      desc: "Exit everything at market price",
+      color: "text-red-400",
+      bgColor: "bg-red-500/10",
+      buttonText: "Close All",
+      buttonColor: "bg-red-500 hover:bg-red-400",
+    },
   };
 
-  const handleExecute = () => {
+  const config = actionConfig[action];
+  const Icon = config.icon;
+
+  const newExposure = action === "reduce" 
+    ? currentExposure * (1 - reductionPercent / 100)
+    : action === "close_all" ? 0 : currentExposure;
+
+  const handleConfirm = () => {
     setConfirmed(true);
-    setTimeout(() => {
-      onExecute(changes);
-    }, 600);
+    setTimeout(onConfirm, 400);
   };
-
-  if (positions.length === 0) {
-    return (
-      <div className="bg-[#1e1f20] border border-[#2d2e2f] rounded-2xl p-6 text-center">
-        <div className="text-[#6b6c6d] mb-2">No positions to manage</div>
-        <div className="text-sm text-[#6b6c6d]">Open some trades first, then come back here to manage them.</div>
-      </div>
-    );
-  }
 
   return (
     <div className="animate-slide-up">
       <div className="bg-[#1e1f20] border border-[#2d2e2f] rounded-2xl overflow-hidden">
         {/* Header */}
-        <div className="px-5 py-4 bg-gradient-to-r from-[#20b2aa]/10 to-transparent border-b border-[#2d2e2f]">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-[#20b2aa]/20">
-              <Zap className="w-5 h-5 text-[#20b2aa]" />
+        <div className="px-5 py-4 border-b border-[#2d2e2f]">
+          <div className="flex items-center gap-3 mb-2">
+            <div className={`p-2.5 rounded-xl ${config.bgColor}`}>
+              <Icon className={`w-5 h-5 ${config.color}`} />
             </div>
             <div>
-              <div className="text-xs text-[#6b6c6d] uppercase tracking-wider">Portfolio Action</div>
-              <div className="font-semibold text-[#e8e8e8] text-lg">{actionTitles[action]}</div>
+              <div className="font-semibold text-[#e8e8e8]">{config.title}</div>
+              <div className="text-xs text-[#6b6c6d]">{config.desc}</div>
             </div>
           </div>
         </div>
 
-        {/* Changes preview */}
-        <div className="divide-y divide-[#2d2e2f]">
-          {/* Closing section */}
-          {closingPositions.length > 0 && (
-            <div className="p-4">
-              <div className="flex items-center gap-2 text-red-400 text-xs font-medium uppercase tracking-wider mb-3">
-                <X className="w-3.5 h-3.5" />
-                Closing ({closingPositions.length})
+        {/* Current state */}
+        <div className="px-5 py-4 border-b border-[#2d2e2f]">
+          <div className="text-xs text-[#6b6c6d] uppercase tracking-wider mb-3">Current Portfolio</div>
+          
+          <div className="space-y-2 mb-4">
+            {positions.slice(0, 3).map((pos, i) => (
+              <div key={i} className="flex items-center justify-between text-sm">
+                <span className="text-[#9a9b9c]">{pos.market}</span>
+                <span className={pos.pnl >= 0 ? "text-[#20b2aa]" : "text-red-400"}>
+                  {pos.pnl >= 0 ? "+" : ""}{formatCurrency(pos.pnl)}
+                </span>
               </div>
-              <div className="space-y-2">
-                {closingPositions.map((change, i) => {
-                  const pos = change.position as typeof positionsWithPnl[0];
-                  return (
-                    <div key={i} className="flex items-center justify-between p-3 bg-red-500/5 rounded-xl border border-red-500/10">
-                      <div className="flex items-center gap-3">
-                        <div className={`p-1.5 rounded-lg ${pos.direction === "long" ? "bg-[#20b2aa]/20" : "bg-red-500/20"}`}>
-                          {pos.direction === "long" ? (
-                            <TrendingUp className="w-3.5 h-3.5 text-[#20b2aa]" />
-                          ) : (
-                            <TrendingDown className="w-3.5 h-3.5 text-red-400" />
-                          )}
-                        </div>
-                        <div>
-                          <div className="font-medium text-[#e8e8e8] text-sm">{pos.market}</div>
-                          <div className="text-xs text-[#6b6c6d]">{formatNumber(pos.size, 2)} {pos.sizeUnit}</div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className={`font-mono text-sm ${pos.pnl >= 0 ? "text-[#20b2aa]" : "text-red-400"}`}>
-                          {pos.pnl >= 0 ? "+" : ""}{formatCurrency(pos.pnl)}
-                        </div>
-                        <div className="text-xs text-[#6b6c6d]">{change.reason}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+            ))}
+          </div>
 
-          {/* Increasing section */}
-          {increasingPositions.length > 0 && (
-            <div className="p-4">
-              <div className="flex items-center gap-2 text-[#20b2aa] text-xs font-medium uppercase tracking-wider mb-3">
-                <Plus className="w-3.5 h-3.5" />
-                Adding to ({increasingPositions.length})
-              </div>
-              <div className="space-y-2">
-                {increasingPositions.map((change, i) => {
-                  const pos = change.position as typeof positionsWithPnl[0];
-                  return (
-                    <div key={i} className="flex items-center justify-between p-3 bg-[#20b2aa]/5 rounded-xl border border-[#20b2aa]/10">
-                      <div className="flex items-center gap-3">
-                        <div className={`p-1.5 rounded-lg ${pos.direction === "long" ? "bg-[#20b2aa]/20" : "bg-red-500/20"}`}>
-                          {pos.direction === "long" ? (
-                            <TrendingUp className="w-3.5 h-3.5 text-[#20b2aa]" />
-                          ) : (
-                            <TrendingDown className="w-3.5 h-3.5 text-red-400" />
-                          )}
-                        </div>
-                        <div>
-                          <div className="font-medium text-[#e8e8e8] text-sm">{pos.market}</div>
-                          <div className="text-xs text-[#6b6c6d]">
-                            {formatNumber(pos.size, 2)} → <span className="text-[#20b2aa]">{formatNumber(change.newSize || 0, 2)}</span> {pos.sizeUnit}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-mono text-sm text-[#20b2aa]">+{formatCurrency(pos.pnl)}</div>
-                        <div className="text-xs text-[#6b6c6d]">{change.reason}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Decreasing section */}
-          {decreasingPositions.length > 0 && (
-            <div className="p-4">
-              <div className="flex items-center gap-2 text-orange-400 text-xs font-medium uppercase tracking-wider mb-3">
-                <Minus className="w-3.5 h-3.5" />
-                Reducing ({decreasingPositions.length})
-              </div>
-              <div className="space-y-2">
-                {decreasingPositions.map((change, i) => {
-                  const pos = change.position as typeof positionsWithPnl[0];
-                  return (
-                    <div key={i} className="flex items-center justify-between p-3 bg-orange-500/5 rounded-xl border border-orange-500/10">
-                      <div className="flex items-center gap-3">
-                        <div className={`p-1.5 rounded-lg ${pos.direction === "long" ? "bg-[#20b2aa]/20" : "bg-red-500/20"}`}>
-                          {pos.direction === "long" ? (
-                            <TrendingUp className="w-3.5 h-3.5 text-[#20b2aa]" />
-                          ) : (
-                            <TrendingDown className="w-3.5 h-3.5 text-red-400" />
-                          )}
-                        </div>
-                        <div>
-                          <div className="font-medium text-[#e8e8e8] text-sm">{pos.market}</div>
-                          <div className="text-xs text-[#6b6c6d]">
-                            {formatNumber(pos.size, 2)} → <span className="text-orange-400">{formatNumber(change.newSize || 0, 2)}</span> {pos.sizeUnit}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xs text-[#6b6c6d]">{change.reason}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          <div className="flex items-center justify-between p-3 bg-[#242526] rounded-xl">
+            <span className="text-sm text-[#6b6c6d]">Total Exposure</span>
+            <span className="font-mono text-lg text-[#e8e8e8]">{formatCurrency(currentExposure)}</span>
+          </div>
         </div>
 
-        {/* Summary */}
-        <div className="px-5 py-4 bg-[#242526] border-t border-[#2d2e2f]">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-[#6b6c6d]">Total trades:</span>
-            <span className="font-mono text-[#e8e8e8]">{changes.length}</span>
-          </div>
-          {closingPositions.length > 0 && (
-            <div className="flex items-center justify-between text-sm mt-1">
-              <span className="text-[#6b6c6d]">Realized P&L:</span>
-              <span className={`font-mono ${totalRealizedPnl >= 0 ? "text-[#20b2aa]" : "text-red-400"}`}>
-                {totalRealizedPnl >= 0 ? "+" : ""}{formatCurrency(totalRealizedPnl)}
-              </span>
+        {/* Reduction slider for reduce action */}
+        {action === "reduce" && (
+          <div className="px-5 py-4 border-b border-[#2d2e2f]">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs text-[#6b6c6d] uppercase tracking-wider">Reduce by</span>
+              <span className="text-lg font-semibold text-orange-400">{reductionPercent}%</span>
             </div>
-          )}
+            <input
+              type="range"
+              min="10"
+              max="100"
+              step="10"
+              value={reductionPercent}
+              onChange={(e) => setReductionPercent(Number(e.target.value))}
+              className="w-full accent-orange-500"
+            />
+            <div className="flex justify-between text-xs text-[#6b6c6d] mt-1">
+              <span>10%</span>
+              <span>50%</span>
+              <span>100%</span>
+            </div>
+          </div>
+        )}
+
+        {/* Result preview */}
+        <div className="px-5 py-4 bg-[#242526]">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-xs text-[#6b6c6d]">Current</div>
+              <div className="font-mono text-[#9a9b9c]">{formatCurrency(currentExposure)}</div>
+            </div>
+            <ArrowRight className="w-5 h-5 text-[#6b6c6d]" />
+            <div className="text-right">
+              <div className="text-xs text-[#6b6c6d]">After</div>
+              <div className={`font-mono ${config.color}`}>{formatCurrency(newExposure)}</div>
+            </div>
+          </div>
         </div>
 
         {/* Actions */}
@@ -270,24 +143,16 @@ export function PortfolioActionCard({ action, positions, onExecute, onCancel }: 
             Cancel
           </button>
           <button
-            onClick={handleExecute}
+            onClick={handleConfirm}
             disabled={confirmed}
-            className={`flex-[2] flex items-center justify-center gap-2 px-4 py-3 font-medium rounded-xl transition-all ${
-              confirmed
-                ? "bg-[#20b2aa] text-white"
-                : "bg-[#20b2aa] hover:bg-[#2cc5bc] text-white"
+            className={`flex-[2] flex items-center justify-center gap-2 px-4 py-3 text-white font-medium rounded-xl transition-all ${
+              confirmed ? config.buttonColor : config.buttonColor
             }`}
           >
             {confirmed ? (
-              <>
-                <Check className="w-4 h-4" />
-                Executed
-              </>
+              <><Check className="w-4 h-4" />Done</>
             ) : (
-              <>
-                <Zap className="w-4 h-4" />
-                Execute {changes.length} trades
-              </>
+              config.buttonText
             )}
           </button>
         </div>
@@ -295,4 +160,3 @@ export function PortfolioActionCard({ action, positions, onExecute, onCancel }: 
     </div>
   );
 }
-
