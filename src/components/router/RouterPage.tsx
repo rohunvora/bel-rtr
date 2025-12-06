@@ -350,6 +350,153 @@ export function RouterPage() {
     setTwaps((prev) => prev.filter((t) => t.id !== planId));
   }, []);
 
+  // Handle Target Trade confirmation
+  const handleTargetTradeConfirm = useCallback((plan: TradePlan) => {
+    const fullPlan: TradePlan = {
+      ...plan,
+      id: plan.id || `trade-${Date.now()}`,
+      createdAt: plan.createdAt || new Date().toISOString(),
+      status: plan.status || "confirmed",
+    };
+    setTrades((prev) => [...prev, fullPlan]);
+    clearModal();
+    addToast("success", `${fullPlan.market} ${fullPlan.direction.toUpperCase()} confirmed`, `Target trade added (demo)`);
+  }, [addToast, clearModal]);
+
+  // Handle Odds Comparison bet
+  const handleOddsBet = useCallback((market: { platform: string; name: string }, amount: number) => {
+    const plan: TradePlan = {
+      id: `pred-${Date.now()}`,
+      market: market.name,
+      direction: "long",
+      maxRisk: amount,
+      stopPrice: 0,
+      size: amount,
+      sizeUnit: "USD",
+      entryPrice: amount,
+      leverage: 1,
+      status: "confirmed",
+      createdAt: new Date().toISOString(),
+    };
+    setTrades((prev) => [...prev, plan]);
+    clearModal();
+    addToast("success", `Bet placed on ${market.platform}`, `$${amount.toLocaleString()} position (demo)`);
+  }, [addToast, clearModal]);
+
+  // Handle Portfolio Builder
+  const handlePortfolioBuild = useCallback((allocations: Array<{ asset: string; weight: number; direction: "long" | "short"; rationale: string }>) => {
+    const totalCapital = 50000;
+    const totalWeight = allocations.reduce((sum, a) => sum + a.weight, 0);
+    
+    const newTrades = allocations.map((alloc, i) => {
+      const dollarAmount = (alloc.weight / totalWeight) * totalCapital;
+      const mockPrice = alloc.asset === "BTC" ? 97000 : alloc.asset === "ETH" ? 3500 : alloc.asset === "SOL" ? 230 : 100;
+      const size = dollarAmount / mockPrice;
+      
+      return {
+        id: `portfolio-${Date.now()}-${i}`,
+        market: `${alloc.asset}-PERP`,
+        direction: alloc.direction,
+        maxRisk: dollarAmount * 0.1,
+        stopPrice: alloc.direction === "long" ? mockPrice * 0.9 : mockPrice * 1.1,
+        size,
+        sizeUnit: alloc.asset,
+        entryPrice: mockPrice,
+        leverage: 10,
+        status: "confirmed" as const,
+        createdAt: new Date().toISOString(),
+      };
+    });
+    
+    setTrades((prev) => [...prev, ...newTrades]);
+    clearModal();
+    addToast("success", "Portfolio built", `${newTrades.length} positions opened (demo)`);
+  }, [addToast, clearModal]);
+
+  // Handle Thesis Explorer selection
+  const handleThesisSelect = useCallback((instrument: { symbol: string; name: string; direction: "long" | "short" }) => {
+    const symbol = instrument.symbol.replace("-PERP", "");
+    const mockPrice = symbol === "NVDA" ? 140 : symbol === "FET" ? 2.5 : 97000;
+    const risk = 3000;
+    
+    const plan: TradePlan = {
+      id: `thesis-${Date.now()}`,
+      market: instrument.symbol.includes("-") ? instrument.symbol : `${instrument.symbol}-PERP`,
+      direction: instrument.direction,
+      maxRisk: risk,
+      stopPrice: instrument.direction === "long" ? mockPrice * 0.95 : mockPrice * 1.05,
+      size: risk / (mockPrice * 0.05),
+      sizeUnit: symbol,
+      entryPrice: mockPrice,
+      leverage: 20,
+      status: "confirmed",
+      createdAt: new Date().toISOString(),
+    };
+    
+    setTrades((prev) => [...prev, plan]);
+    clearModal();
+    addToast("success", `${instrument.name} position opened`, `${instrument.direction.toUpperCase()} (demo)`);
+  }, [addToast, clearModal]);
+
+  // Handle Conditional Order activation
+  const handleConditionalActivate = useCallback(() => {
+    if (modalState.type !== "conditional_order") return;
+    
+    const plan: TradePlan = {
+      id: `cond-${Date.now()}`,
+      market: modalState.trade.market,
+      direction: modalState.trade.direction,
+      maxRisk: modalState.trade.maxRisk,
+      stopPrice: modalState.trade.stopPrice,
+      size: modalState.trade.size,
+      sizeUnit: modalState.trade.sizeUnit,
+      entryPrice: modalState.trade.entryPrice,
+      leverage: modalState.trade.leverage,
+      status: "planned", // Special status for conditional
+      createdAt: new Date().toISOString(),
+    };
+    
+    setTrades((prev) => [...prev, plan]);
+    clearModal();
+    addToast("success", "Condition activated", "Trade will execute when triggered (demo)");
+  }, [addToast, clearModal, modalState]);
+
+  // Handle Hedge addition
+  const handleHedgeAdd = useCallback((option: { name: string; protection: number }) => {
+    if (trades.length === 0) {
+      addToast("error", "No position to hedge", "Open a trade first");
+      clearModal();
+      return;
+    }
+    
+    const basePosition = trades[0];
+    const hedgeDirection = basePosition.direction === "long" ? "short" : "long";
+    
+    const plan: TradePlan = {
+      id: `hedge-${Date.now()}`,
+      market: basePosition.market,
+      direction: hedgeDirection,
+      maxRisk: basePosition.maxRisk * (option.protection / 100),
+      stopPrice: basePosition.entryPrice,
+      size: basePosition.size * (option.protection / 100),
+      sizeUnit: basePosition.sizeUnit,
+      entryPrice: basePosition.entryPrice,
+      leverage: basePosition.leverage,
+      status: "confirmed",
+      createdAt: new Date().toISOString(),
+    };
+    
+    setTrades((prev) => [...prev, plan]);
+    clearModal();
+    addToast("success", `${option.name} added`, `${option.protection}% protection (demo)`);
+  }, [addToast, clearModal, trades]);
+
+  // Handle Thesis Tracker activation
+  const handleThesisTrack = useCallback(() => {
+    clearModal();
+    addToast("success", "Tracking started", "You'll be notified of changes (demo)");
+  }, [addToast, clearModal]);
+
   const handleSuggestionClick = (suggestion: string) => {
     setInput(suggestion);
     processInput(suggestion);
@@ -511,7 +658,7 @@ export function RouterPage() {
                     symbol={modalState.symbol}
                     targetPrice={modalState.targetPrice}
                     deadline={modalState.deadline}
-                    onConfirm={handleConfirmTrade}
+                    onConfirm={handleTargetTradeConfirm}
                     onCancel={clearModal}
                   />
                 )}
@@ -521,7 +668,7 @@ export function RouterPage() {
                     prediction={modalState.prediction}
                     userBelief={modalState.userBelief}
                     markets={generateOddsMarkets(modalState.prediction)}
-                    onBet={() => { clearModal(); addToast("success", "Bet placed", "Position opened (demo)"); }}
+                    onBet={(market, amount) => handleOddsBet(market, amount)}
                     onCancel={clearModal}
                   />
                 )}
@@ -530,7 +677,7 @@ export function RouterPage() {
                   <PortfolioBuilderCard
                     beliefs={modalState.beliefs}
                     totalCapital={50000}
-                    onBuild={() => { clearModal(); addToast("success", "Portfolio built", "All positions opened (demo)"); }}
+                    onBuild={handlePortfolioBuild}
                     onCancel={clearModal}
                   />
                 )}
@@ -540,7 +687,7 @@ export function RouterPage() {
                     thesis={modalState.thesis}
                     sentiment={modalState.sentiment}
                     instruments={generateThesisInstruments(modalState.sentiment)}
-                    onSelect={(inst) => { clearModal(); addToast("success", `Selected ${inst.name}`, "Proceeding to trade (demo)"); }}
+                    onSelect={handleThesisSelect}
                     onCancel={clearModal}
                   />
                 )}
@@ -549,7 +696,7 @@ export function RouterPage() {
                   <ConditionalOrderCard
                     condition={modalState.condition}
                     trade={modalState.trade}
-                    onActivate={() => { clearModal(); addToast("success", "Condition activated", "Monitoring for trigger (demo)"); }}
+                    onActivate={handleConditionalActivate}
                     onCancel={clearModal}
                   />
                 )}
@@ -558,7 +705,7 @@ export function RouterPage() {
                   <HedgeConstructorCard
                     position={demoPosition}
                     hedgeOptions={generateHedgeOptions(demoPosition)}
-                    onHedge={() => { clearModal(); addToast("success", "Protection added", "Hedge position opened (demo)"); }}
+                    onHedge={handleHedgeAdd}
                     onCancel={clearModal}
                   />
                 )}
@@ -568,7 +715,7 @@ export function RouterPage() {
                     position={demoPosition}
                     thesis={modalState.thesis}
                     metrics={generateThesisMetrics()}
-                    onActivate={() => { clearModal(); addToast("success", "Tracking started", "You'll be notified of changes (demo)"); }}
+                    onActivate={handleThesisTrack}
                     onCancel={clearModal}
                   />
                 )}
