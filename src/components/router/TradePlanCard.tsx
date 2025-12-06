@@ -7,13 +7,26 @@ import { FlashingPrice } from "@/components/AnimatedPrice";
 import { MiniChart } from "@/components/MiniChart";
 import { useLivePrices } from "@/lib/use-live-prices";
 
+// Input plan type without the generated fields
+interface PlanInput {
+  market: string;
+  direction: "long" | "short";
+  maxRisk: number;
+  stopPrice: number;
+  size: number;
+  sizeUnit: string;
+  entryPrice: number;
+  leverage: number;
+}
+
 interface TradePlanCardProps {
-  plan: Omit<TradePlan, "id" | "createdAt" | "status">;
+  plan: PlanInput;
+  prompt: string;
   onConfirm: (plan: TradePlan) => void;
   onRefine: (message: string) => void;
 }
 
-export function TradePlanCard({ plan: initialPlan, onConfirm, onRefine }: TradePlanCardProps) {
+export function TradePlanCard({ plan: initialPlan, prompt, onConfirm, onRefine }: TradePlanCardProps) {
   const { prices } = useLivePrices();
   const [showEdit, setShowEdit] = useState(false);
   const [risk, setRisk] = useState(initialPlan.maxRisk);
@@ -66,6 +79,8 @@ export function TradePlanCard({ plan: initialPlan, onConfirm, onRefine }: TradeP
   const handleConfirm = () => {
     const plan: TradePlan = {
       id: `trade-${Date.now()}`,
+      prompt,
+      marketType: "crypto",
       market: initialPlan.market,
       direction: initialPlan.direction,
       maxRisk: risk,
@@ -273,13 +288,26 @@ export function TradePlanCard({ plan: initialPlan, onConfirm, onRefine }: TradeP
   );
 }
 
+interface TwapPlanInput {
+  market: string;
+  direction: "long" | "short";
+  totalNotional: number;
+  maxRisk: number;
+  stopPrice: number;
+  duration: number;
+  slices: number;
+  priceRangeLow: number;
+  priceRangeHigh: number;
+}
+
 interface TwapPlanCardProps {
-  plan: Omit<TwapPlan, "id" | "createdAt" | "status">;
+  plan: TwapPlanInput;
+  prompt: string;
   onConfirm: (plan: TwapPlan) => void;
   onRefine: (message: string) => void;
 }
 
-export function TwapPlanCard({ plan: initialPlan, onConfirm, onRefine }: TwapPlanCardProps) {
+export function TwapPlanCard({ plan: initialPlan, prompt, onConfirm, onRefine }: TwapPlanCardProps) {
   const { prices } = useLivePrices();
   const [showEdit, setShowEdit] = useState(false);
   const [duration, setDuration] = useState(initialPlan.duration);
@@ -303,6 +331,7 @@ export function TwapPlanCard({ plan: initialPlan, onConfirm, onRefine }: TwapPla
   const handleConfirm = () => {
     const plan: TwapPlan = {
       id: `twap-${Date.now()}`,
+      prompt,
       market: initialPlan.market,
       direction: initialPlan.direction,
       totalNotional: initialPlan.totalNotional,

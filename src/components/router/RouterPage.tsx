@@ -1,114 +1,109 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Zap, ArrowUp, Sparkles, Wifi, WifiOff } from "lucide-react";
+import { ArrowUp, Coins, Vote, Building2, Wifi, WifiOff } from "lucide-react";
 import { TradePlanCard, TwapPlanCard } from "./TradePlanCard";
-import { PlannedTradesPanel } from "./PlannedTradesPanel";
+import { PortfolioCard } from "./PortfolioCard";
 import { LockRiskModal } from "./LockRiskModal";
-import {
-  PortfolioActionCard,
-  TargetTradeCard,
-  ThesisExplorerCard,
-} from "./modals";
+import { PredictionCard, StockCard, ThesisExplorerCard } from "./modals";
 import { ToastContainer, ToastMessage } from "@/components/Toast";
 import { FlashingPrice } from "@/components/AnimatedPrice";
 import { useLivePrices } from "@/lib/use-live-prices";
 import {
   TradePlan,
   TwapPlan,
+  PredictionPlan,
+  StockPlan,
   parseRouterIntent,
   calculateSize,
+  formatCurrency,
 } from "@/lib/router-types";
 
-// Types for different modal states (simplified to 5 core flows)
-type ModalState = 
-  | { type: "none" }
-  | { type: "trade"; plan: Omit<TradePlan, "id" | "createdAt" | "status">; interpretation?: string; originalInput?: string }
-  | { type: "twap"; plan: Omit<TwapPlan, "id" | "createdAt" | "status">; interpretation?: string; originalInput?: string }
-  | { type: "portfolio_action"; action: "cut_losers_double_winners" | "close_all" | "reduce_risk" | "take_profit"; originalInput?: string }
-  | { type: "target_trade"; symbol: string; targetPrice: number; deadline?: string; originalInput?: string }
-  | { type: "thesis_explorer"; thesis: string; sentiment: "bullish" | "bearish"; originalInput?: string };
+// Union type for all plans
+type AnyPlan = TradePlan | PredictionPlan | StockPlan;
 
-// Demo data generators
-const generateThesisInstruments = (thesis: string, sentiment: "bullish" | "bearish") => {
-  // Make instruments contextual to the thesis
-  if (thesis.toLowerCase().includes("ai") && sentiment === "bearish") {
-    return [
-      { type: "perp" as const, symbol: "NVDA", name: "Short NVIDIA", direction: "short" as const, directness: "direct" as const, liquidity: "high" as const, fundingRate: 0.0012, reasoning: "The AI chip leader — if AI is overhyped, NVDA has the most to lose" },
-      { type: "perp" as const, symbol: "MSFT", name: "Short Microsoft", direction: "short" as const, directness: "direct" as const, liquidity: "high" as const, fundingRate: 0.0008, reasoning: "Biggest AI investor ($13B in OpenAI) — exposed to correction" },
-      { type: "perp" as const, symbol: "RENDER", name: "Short Render", direction: "short" as const, directness: "indirect" as const, liquidity: "medium" as const, fundingRate: 0.0015, reasoning: "AI crypto play — if narrative fades, high beta to downside" },
-    ];
-  }
-  if (thesis.toLowerCase().includes("weight loss") || thesis.toLowerCase().includes("ozempic")) {
-    return [
-      { type: "perp" as const, symbol: "LLY", name: "Long Eli Lilly", direction: "long" as const, directness: "direct" as const, liquidity: "high" as const, fundingRate: 0.0003, reasoning: "Makes Mounjaro — largest weight loss drug pipeline" },
-      { type: "perp" as const, symbol: "NVO", name: "Long Novo Nordisk", direction: "long" as const, directness: "direct" as const, liquidity: "high" as const, fundingRate: 0.0004, reasoning: "Makes Ozempic & Wegovy — current market leader" },
-      { type: "perp" as const, symbol: "HIMS", name: "Long Hims & Hers", direction: "long" as const, directness: "indirect" as const, liquidity: "medium" as const, fundingRate: 0.0008, reasoning: "Telehealth distributor — riding the prescription wave" },
-    ];
-  }
-  // Default
-  return [
-    { type: "perp" as const, symbol: "BTC", name: "Bitcoin", direction: sentiment === "bullish" ? "long" as const : "short" as const, directness: "direct" as const, liquidity: "high" as const, fundingRate: 0.0005, reasoning: "Most liquid crypto asset" },
-  ];
+// Simplified plan types for modal state (without id, createdAt, status, prompt, marketType)
+type CryptoPlan = {
+  market: string;
+  direction: "long" | "short";
+  maxRisk: number;
+  stopPrice: number;
+  size: number;
+  sizeUnit: string;
+  entryPrice: number;
+  leverage: number;
 };
 
-// Pre-populated demo positions so Portfolio Action has something to work with
-const DEMO_POSITIONS: TradePlan[] = [
-  {
-    id: "demo-btc",
-    market: "BTC-PERP",
-    direction: "long",
-    maxRisk: 3000,
-    stopPrice: 92000,
-    size: 1.2,
-    sizeUnit: "BTC",
-    entryPrice: 95500,
-    leverage: 38,
-    status: "confirmed",
-    createdAt: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
+type TwapPlanInput = {
+  market: string;
+  direction: "long" | "short";
+  totalNotional: number;
+  maxRisk: number;
+  stopPrice: number;
+  duration: number;
+  slices: number;
+  priceRangeLow: number;
+  priceRangeHigh: number;
+};
+
+// Modal state types
+type ModalState = 
+  | { type: "none" }
+  | { type: "crypto"; plan: CryptoPlan; prompt: string }
+  | { type: "twap"; plan: TwapPlanInput; prompt: string }
+  | { type: "prediction"; market: string; platform: "polymarket" | "kalshi"; odds: number; prompt: string }
+  | { type: "stock"; ticker: string; company: string; price: number; thesis: string; prompt: string }
+  | { type: "thesis"; thesis: string; sentiment: "bullish" | "bearish"; prompt: string };
+
+// Examples that showcase range
+const EXAMPLES = [
+  { 
+    text: "I think BTC is going to dump", 
+    type: "crypto" as const,
+    desc: "Crypto perpetual" 
   },
-  {
-    id: "demo-eth",
-    market: "ETH-PERP",
-    direction: "short",
-    maxRisk: 2000,
-    stopPrice: 3800,
-    size: 8.5,
-    sizeUnit: "ETH",
-    entryPrice: 3550,
-    leverage: 15,
-    status: "confirmed",
-    createdAt: new Date(Date.now() - 7200000).toISOString(), // 2 hours ago
+  { 
+    text: "Lakers win tonight", 
+    type: "prediction" as const,
+    desc: "Prediction market" 
   },
-  {
-    id: "demo-sol",
-    market: "SOL-PERP",
-    direction: "long",
-    maxRisk: 1500,
-    stopPrice: 215,
-    size: 45,
-    sizeUnit: "SOL",
-    entryPrice: 228,
-    leverage: 22,
-    status: "confirmed",
-    createdAt: new Date(Date.now() - 1800000).toISOString(), // 30 min ago
+  { 
+    text: "Peptides are the future", 
+    type: "stock" as const,
+    desc: "Stock trade" 
   },
 ];
 
-// Helper to create trade plan from live price
+// Stock thesis mapping
+const STOCK_THESES: Record<string, { ticker: string; company: string; price: number; thesis: string }> = {
+  "peptide": { ticker: "LLY", company: "Eli Lilly", price: 782.50, thesis: "Eli Lilly makes Mounjaro, the leading GLP-1 weight loss drug. Up 60% YTD on peptide demand." },
+  "ozempic": { ticker: "NVO", company: "Novo Nordisk", price: 125.30, thesis: "Novo Nordisk makes Ozempic and Wegovy. Dominant in the GLP-1 market." },
+  "weight loss": { ticker: "LLY", company: "Eli Lilly", price: 782.50, thesis: "Eli Lilly is the market leader in GLP-1 weight loss drugs with Mounjaro." },
+  "ai overhyped": { ticker: "NVDA", company: "NVIDIA", price: 142.50, thesis: "NVIDIA is the AI chip leader. If AI is overhyped, this has the most downside." },
+};
+
+// Prediction market mapping  
+const PREDICTION_MARKETS: Record<string, { market: string; platform: "polymarket" | "kalshi"; odds: number }> = {
+  "lakers": { market: "Lakers beat Celtics tonight", platform: "polymarket", odds: 0.42 },
+  "celtics": { market: "Celtics beat Lakers tonight", platform: "polymarket", odds: 0.58 },
+  "trump": { market: "Trump wins 2024 election", platform: "polymarket", odds: 0.52 },
+  "fed": { market: "Fed cuts rates in December", platform: "kalshi", odds: 0.78 },
+  "bitcoin 100k": { market: "Bitcoin above $100k by EOY", platform: "polymarket", odds: 0.65 },
+};
+
 function createTradePlan(
   market: string,
   direction: "long" | "short",
   price: number,
   risk: number = 3000
-): Omit<TradePlan, "id" | "createdAt" | "status"> {
+): Omit<TradePlan, "id" | "createdAt" | "status" | "prompt" | "marketType"> {
   const symbol = market.split("-")[0];
   const stopDistance = price * 0.02;
   const stopPrice = direction === "long" 
     ? Math.round(price - stopDistance) 
     : Math.round(price + stopDistance);
-  const size = calculateSize(risk, price, stopPrice, direction);
-  const notional = Math.abs(size) * price;
+  const size = Math.abs(calculateSize(risk, price, stopPrice, direction));
+  const notional = size * price;
   const leverage = Math.round((notional / risk) * 10) / 10;
 
   return {
@@ -116,7 +111,7 @@ function createTradePlan(
     direction,
     maxRisk: risk,
     stopPrice,
-    size: Math.abs(size),
+    size,
     sizeUnit: symbol,
     entryPrice: price,
     leverage,
@@ -127,14 +122,14 @@ export function RouterPage() {
   const { prices, isConnected } = useLivePrices();
   const [input, setInput] = useState("");
   const [modalState, setModalState] = useState<ModalState>({ type: "none" });
-  const [trades, setTrades] = useState<TradePlan[]>(DEMO_POSITIONS); // Pre-populated for demo
-  const [twaps, setTwaps] = useState<TwapPlan[]>([]);
+  const [portfolio, setPortfolio] = useState<AnyPlan[]>([]);
   const [lockTarget, setLockTarget] = useState<TradePlan | null>(null);
   const [showLockModal, setShowLockModal] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
+  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -142,6 +137,7 @@ export function RouterPage() {
     }
   }, [input]);
 
+  // Scroll to results
   useEffect(() => {
     if (modalState.type !== "none" && resultsRef.current) {
       resultsRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -157,52 +153,49 @@ export function RouterPage() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // Intent detection - 5 core flows only
+  // Intent detection
   const processInput = useCallback((text: string) => {
     const lower = text.toLowerCase();
 
-    // 1. Portfolio Action - "cut losers", "double winners", etc.
-    if ((lower.includes("cut") && lower.includes("losers")) || (lower.includes("double") && lower.includes("winners"))) {
-      setModalState({ type: "portfolio_action", action: "cut_losers_double_winners", originalInput: text });
-      return;
+    // Check for prediction market keywords
+    for (const [keyword, data] of Object.entries(PREDICTION_MARKETS)) {
+      if (lower.includes(keyword)) {
+        setModalState({ 
+          type: "prediction", 
+          market: data.market, 
+          platform: data.platform, 
+          odds: data.odds,
+          prompt: text 
+        });
+        return;
+      }
     }
-    if (lower.includes("close all") || lower.includes("close everything")) {
-      setModalState({ type: "portfolio_action", action: "close_all", originalInput: text });
-      return;
+
+    // Check for stock/thesis keywords
+    for (const [keyword, data] of Object.entries(STOCK_THESES)) {
+      if (lower.includes(keyword)) {
+        setModalState({ 
+          type: "stock", 
+          ticker: data.ticker, 
+          company: data.company, 
+          price: data.price,
+          thesis: data.thesis,
+          prompt: text 
+        });
+        return;
+      }
     }
-    if (lower.includes("reduce risk") || lower.includes("de-risk")) {
-      setModalState({ type: "portfolio_action", action: "reduce_risk", originalInput: text });
-      return;
-    }
-    if (lower.includes("take profit")) {
-      setModalState({ type: "portfolio_action", action: "take_profit", originalInput: text });
+
+    // Check for thesis explorer patterns
+    if (lower.includes("overhyped") || lower.includes("overvalued") || lower.includes("undervalued")) {
+      const sentiment = lower.includes("overhyped") || lower.includes("overvalued") ? "bearish" : "bullish";
+      setModalState({ type: "thesis", thesis: text, sentiment, prompt: text });
       return;
     }
 
-    // 2. Target Trade - "BTC to $120k by March"
-    const targetMatch = lower.match(/(btc|eth|sol)\s+(?:to|will hit|reaches?)\s+\$?([\d,]+)k?\s*(?:by|within|in)?\s*(march|april|end of year|eoy|3 months|next month)?/i);
-    if (targetMatch) {
-      const symbol = targetMatch[1].toUpperCase();
-      let target = parseFloat(targetMatch[2].replace(",", ""));
-      if (target < 1000 && symbol === "BTC") target *= 1000;
-      if (target < 100 && symbol === "ETH") target *= 1000;
-      setModalState({ type: "target_trade", symbol, targetPrice: target, deadline: targetMatch[3], originalInput: text });
-      return;
-    }
-
-    // 3. Thesis Explorer - macro views that need instrument discovery
-    if (lower.includes("ai") && (lower.includes("overhyped") || lower.includes("overvalued") || lower.includes("bubble"))) {
-      setModalState({ type: "thesis_explorer", thesis: "AI is overhyped", sentiment: "bearish", originalInput: text });
-      return;
-    }
-    if (lower.includes("weight loss") || lower.includes("ozempic") || lower.includes("glp-1") || lower.includes("peptide")) {
-      setModalState({ type: "thesis_explorer", thesis: "Weight loss drugs will dominate healthcare", sentiment: "bullish", originalInput: text });
-      return;
-    }
-
-    // Fallback to original trade/twap parsing
+    // Default: crypto trade
     const intent = parseRouterIntent(text);
-
+    
     if (intent.type === "twap") {
       const symbol = intent.market?.split("-")[0] || "ETH";
       const livePrice = prices[symbol]?.price || 3500;
@@ -220,37 +213,35 @@ export function RouterPage() {
           priceRangeLow: Math.round(livePrice * 0.99),
           priceRangeHigh: Math.round(livePrice * 1.01),
         },
-        interpretation: intent.interpretation,
-        originalInput: intent.originalInput,
+        prompt: text,
       });
-    } else if (intent.type === "trade") {
+      return;
+    }
+    
+    if (intent.type === "trade") {
       const symbol = intent.market?.split("-")[0] || "BTC";
       const livePrice = prices[symbol]?.price;
       
       if (!livePrice) {
-        addToast("error", "Price not available", "Waiting for market data...");
+        addToast("error", "Waiting for price data", "Try again in a moment");
         return;
       }
 
       const direction = intent.direction || "long";
       const risk = intent.risk || 3000;
-      let template = createTradePlan(intent.market || "BTC-PERP", direction, livePrice, risk);
+      const plan = createTradePlan(intent.market || "BTC-PERP", direction, livePrice, risk);
       
       if (intent.stop) {
-        template.stopPrice = intent.stop;
-        template.size = Math.abs(calculateSize(risk, livePrice, intent.stop, direction));
+        plan.stopPrice = intent.stop;
+        plan.size = Math.abs(calculateSize(risk, livePrice, intent.stop, direction));
       }
 
-      setModalState({
-        type: "trade",
-        plan: template,
-        interpretation: intent.interpretation,
-        originalInput: intent.originalInput,
-      });
-    } else {
-      addToast("error", "Couldn't understand that", "Try one of the examples below");
+      setModalState({ type: "crypto", plan, prompt: text });
+      return;
     }
-  }, [addToast, prices]);
+
+    addToast("error", "I didn't understand that", "Try one of the examples");
+  }, [prices, addToast]);
 
   const handleSubmit = () => {
     if (input.trim()) {
@@ -270,234 +261,265 @@ export function RouterPage() {
     setInput("");
   }, []);
 
-  const handleConfirmTrade = useCallback((plan: TradePlan) => {
-    setTrades((prev) => [...prev, plan]);
+  // Confirm handlers for each type
+  const handleConfirmCrypto = useCallback((plan: TradePlan) => {
+    setPortfolio((prev) => [plan, ...prev]);
     clearModal();
-    addToast("success", `${plan.market} ${plan.direction.toUpperCase()} confirmed`, `${plan.size.toFixed(2)} ${plan.sizeUnit} • Max risk: $${plan.maxRisk.toLocaleString()} (demo)`);
+    addToast("success", `${plan.market} ${plan.direction.toUpperCase()}`, `"${plan.prompt.slice(0, 30)}${plan.prompt.length > 30 ? '...' : ''}"`);
   }, [addToast, clearModal]);
 
   const handleConfirmTwap = useCallback((plan: TwapPlan) => {
-    setTwaps((prev) => [...prev, plan]);
-    clearModal();
-    addToast("success", `Execution started: ${plan.market}`, `$${plan.totalNotional.toLocaleString()} over ${plan.duration} minutes (demo)`);
-  }, [addToast, clearModal]);
-
-  const handleLockRisk = useCallback((planId: string) => {
-    const plan = trades.find((t) => t.id === planId);
-    if (plan) {
-      setLockTarget(plan);
-      setShowLockModal(true);
-    }
-  }, [trades]);
-
-  const handleConfirmLock = useCallback((planId: string) => {
-    setTrades((prev) => prev.map((t) => (t.id === planId ? { ...t, status: "protected" as const } : t)));
-    setShowLockModal(false);
-    setLockTarget(null);
-    addToast("success", "Risk limit enabled", "This position is now protected (demo)");
-  }, [addToast]);
-
-  const handleRemoveTrade = useCallback((planId: string) => {
-    setTrades((prev) => prev.filter((t) => t.id !== planId));
-  }, []);
-
-  const handleRemoveTwap = useCallback((planId: string) => {
-    setTwaps((prev) => prev.filter((t) => t.id !== planId));
-  }, []);
-
-  // Handle Target Trade confirmation
-  const handleTargetTradeConfirm = useCallback((plan: TradePlan) => {
-    const fullPlan: TradePlan = {
-      ...plan,
-      id: plan.id || `trade-${Date.now()}`,
-      createdAt: plan.createdAt || new Date().toISOString(),
-      status: plan.status || "confirmed",
+    // Convert to TradePlan for portfolio display
+    const tradePlan: TradePlan = {
+      id: plan.id,
+      prompt: plan.prompt,
+      marketType: "crypto",
+      market: plan.market,
+      direction: plan.direction,
+      maxRisk: plan.maxRisk,
+      stopPrice: plan.stopPrice,
+      size: plan.totalNotional / ((plan.priceRangeLow + plan.priceRangeHigh) / 2),
+      sizeUnit: plan.market.split("-")[0],
+      entryPrice: (plan.priceRangeLow + plan.priceRangeHigh) / 2,
+      leverage: 10,
+      status: "confirmed",
+      createdAt: plan.createdAt,
     };
-    setTrades((prev) => [...prev, fullPlan]);
+    setPortfolio((prev) => [tradePlan, ...prev]);
     clearModal();
-    addToast("success", `${fullPlan.market} ${fullPlan.direction.toUpperCase()} confirmed`, `Target trade added (demo)`);
+    addToast("success", `Gradual ${plan.direction} started`, plan.market);
   }, [addToast, clearModal]);
 
-  // Handle Thesis Explorer selection
+  const handleConfirmPrediction = useCallback((plan: PredictionPlan) => {
+    setPortfolio((prev) => [plan, ...prev]);
+    clearModal();
+    addToast("success", `${plan.side.toUpperCase()} on ${plan.platform}`, plan.market);
+  }, [addToast, clearModal]);
+
+  const handleConfirmStock = useCallback((plan: StockPlan) => {
+    setPortfolio((prev) => [plan, ...prev]);
+    clearModal();
+    addToast("success", `${plan.direction.toUpperCase()} ${plan.ticker}`, plan.companyName);
+  }, [addToast, clearModal]);
+
   const handleThesisSelect = useCallback((instrument: { symbol: string; name: string; direction: "long" | "short" }) => {
-    const symbol = instrument.symbol;
-    // Mock prices for different assets
-    const mockPrices: Record<string, number> = {
-      "NVDA": 140, "MSFT": 420, "RENDER": 8.5,
-      "LLY": 780, "NVO": 125, "HIMS": 22,
-      "BTC": 97000, "ETH": 3500, "SOL": 230,
-    };
-    const mockPrice = mockPrices[symbol] || 100;
-    const risk = 3000;
+    const prompt = modalState.type === "thesis" ? modalState.prompt : "";
+    const mockPrices: Record<string, number> = { "NVDA": 142, "MSFT": 420, "LLY": 782, "NVO": 125 };
+    const price = mockPrices[instrument.symbol] || 100;
     
     const plan: TradePlan = {
       id: `thesis-${Date.now()}`,
-      market: `${symbol}-PERP`,
+      prompt,
+      marketType: "crypto", // Using crypto type for display
+      market: `${instrument.symbol}-STOCK`,
       direction: instrument.direction,
-      maxRisk: risk,
-      stopPrice: instrument.direction === "long" ? mockPrice * 0.92 : mockPrice * 1.08,
-      size: risk / (mockPrice * 0.08),
-      sizeUnit: symbol,
-      entryPrice: mockPrice,
-      leverage: Math.round((risk / (mockPrice * 0.08) * mockPrice) / risk),
+      maxRisk: 3000,
+      stopPrice: instrument.direction === "long" ? price * 0.92 : price * 1.08,
+      size: 3000 / (price * 0.08),
+      sizeUnit: instrument.symbol,
+      entryPrice: price,
+      leverage: 1,
       status: "confirmed",
       createdAt: new Date().toISOString(),
     };
     
-    setTrades((prev) => [...prev, plan]);
+    setPortfolio((prev) => [plan, ...prev]);
     clearModal();
-    addToast("success", `${instrument.name} position opened`, `${instrument.direction.toUpperCase()} (demo)`);
-  }, [addToast, clearModal]);
+    addToast("success", `${instrument.direction.toUpperCase()} ${instrument.symbol}`, instrument.name);
+  }, [addToast, clearModal, modalState]);
 
-  const handleSuggestionClick = (suggestion: string) => {
-    setInput(suggestion);
-    processInput(suggestion);
+  const handleRemove = useCallback((id: string) => {
+    setPortfolio((prev) => prev.filter((p) => p.id !== id));
+  }, []);
+
+  const handleLockRisk = useCallback((planId: string) => {
+    const plan = portfolio.find((p) => p.id === planId) as TradePlan | undefined;
+    if (plan && 'leverage' in plan) {
+      setLockTarget(plan);
+      setShowLockModal(true);
+    }
+  }, [portfolio]);
+
+  const handleConfirmLock = useCallback((planId: string) => {
+    setPortfolio((prev) =>
+      prev.map((p) => {
+        if (p.id === planId && 'leverage' in p) {
+          return { ...p, status: "protected" as const } as TradePlan;
+        }
+        return p;
+      })
+    );
+    setShowLockModal(false);
+    setLockTarget(null);
+    addToast("success", "Limits locked", "Position protected");
+  }, [addToast]);
+
+  const handleExampleClick = (example: typeof EXAMPLES[0]) => {
+    setInput(example.text);
+    processInput(example.text);
   };
 
-  // Demo examples - 5 core flows that create "wow" moments
-  const examples = [
-    { text: "I think BTC is going to dump", label: "1", desc: "Vague idea → structured trade" },
-    { text: "BTC to $120k by March", label: "2", desc: "Price target with deadline" },
-    { text: "Buy $50k of ETH slowly over 15 minutes", label: "3", desc: "Smart execution to reduce slippage" },
-    { text: "I think AI is overhyped", label: "4", desc: "Find ways to trade your thesis" },
-    { text: "Cut my losers, double my winners", label: "5", desc: "Manage everything in one command" },
-  ];
+  // Generate thesis instruments
+  const generateThesisInstruments = (thesis: string, sentiment: "bullish" | "bearish") => {
+    if (sentiment === "bearish" && thesis.toLowerCase().includes("ai")) {
+      return [
+        { type: "perp" as const, symbol: "NVDA", name: "Short NVIDIA", direction: "short" as const, directness: "direct" as const, liquidity: "high" as const, fundingRate: 0.001, reasoning: "AI chip leader — most exposed to narrative shift" },
+        { type: "perp" as const, symbol: "MSFT", name: "Short Microsoft", direction: "short" as const, directness: "direct" as const, liquidity: "high" as const, fundingRate: 0.0008, reasoning: "$13B in OpenAI — big AI bet" },
+      ];
+    }
+    return [
+      { type: "perp" as const, symbol: "BTC", name: "Bitcoin", direction: sentiment === "bullish" ? "long" as const : "short" as const, directness: "direct" as const, liquidity: "high" as const, fundingRate: 0.0005, reasoning: "Most liquid crypto asset" },
+    ];
+  };
+
+  const hasPositions = portfolio.length > 0;
 
   return (
-    <div className="h-screen flex">
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="flex-shrink-0 px-8 py-4 border-b border-[#2d2e2f]">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#20b2aa] to-[#20b2aa]/60 flex items-center justify-center">
-                <Zap className="w-4 h-4 text-white" />
-              </div>
-              <div>
-                <h1 className="text-lg font-semibold text-[#e8e8e8]">Router</h1>
-                <p className="text-xs text-[#6b6c6d]">Ideas → structured trades with risk limits</p>
-              </div>
+    <div className="min-h-screen bg-[#191a1a]">
+      {/* Simple header */}
+      <header className="border-b border-[#2d2e2f]">
+        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-[#20b2aa]/20 flex items-center justify-center">
+              <span className="text-[#20b2aa] font-bold text-sm">R</span>
             </div>
-
-            <div className="flex items-center gap-6">
-              {["BTC", "ETH", "SOL"].map((symbol) => {
-                const priceData = prices[symbol];
-                if (!priceData) return null;
-                const isUp = priceData.changePercent24h >= 0;
-                return (
-                  <div key={symbol} className="flex items-center gap-2">
-                    <span className="text-xs text-[#6b6c6d]">{symbol}</span>
-                    <FlashingPrice value={priceData.price} decimals={symbol === "BTC" ? 0 : symbol === "ETH" ? 0 : 2} className="text-sm text-[#e8e8e8]" />
-                    <span className={`text-xs ${isUp ? "text-[#20b2aa]" : "text-red-400"}`}>
-                      {isUp ? "+" : ""}{priceData.changePercent24h.toFixed(1)}%
-                    </span>
-                  </div>
-                );
-              })}
-              <div className={`flex items-center gap-1.5 text-xs ${isConnected ? "text-[#20b2aa]" : "text-[#6b6c6d]"}`}>
-                {isConnected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-                <span>{isConnected ? "Live" : "Connecting..."}</span>
-              </div>
+            <span className="font-semibold text-[#e8e8e8]">Router</span>
+          </div>
+          
+          {/* Live prices */}
+          <div className="flex items-center gap-6">
+            {["BTC", "ETH", "SOL"].map((symbol) => {
+              const priceData = prices[symbol];
+              if (!priceData) return null;
+              return (
+                <div key={symbol} className="flex items-center gap-2 text-sm">
+                  <span className="text-[#6b6c6d]">{symbol}</span>
+                  <FlashingPrice 
+                    value={priceData.price} 
+                    decimals={symbol === "SOL" ? 0 : 0}
+                    className="text-[#e8e8e8] font-mono"
+                  />
+                </div>
+              );
+            })}
+            <div className={`flex items-center gap-1 text-xs ${isConnected ? "text-[#20b2aa]" : "text-[#6b6c6d]"}`}>
+              {isConnected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
             </div>
           </div>
-        </header>
+        </div>
+      </header>
 
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="max-w-2xl mx-auto px-8 py-8">
+      <div className="max-w-6xl mx-auto px-6 py-8">
+        <div className="flex gap-8">
+          {/* Main area */}
+          <div className="flex-1">
+            {/* Hero */}
             {modalState.type === "none" && (
-              <div className="text-center mb-8">
-                <h2 className="text-2xl font-semibold text-[#e8e8e8] mb-2">What&apos;s your idea?</h2>
-                <p className="text-[#9a9b9c]">From rough thoughts to portfolio actions — we&apos;ll structure it.</p>
+              <div className="mb-8">
+                <h1 className="text-3xl font-semibold text-[#e8e8e8] mb-2">
+                  What do you think is going to happen?
+                </h1>
+                <p className="text-[#6b6c6d]">
+                  Type any view — crypto, stocks, sports, politics. We&apos;ll help you trade it.
+                </p>
               </div>
             )}
 
-            {/* Input area */}
-            <div className="relative mb-4">
-              <div className="relative bg-[#1e1f20] border border-[#2d2e2f] rounded-2xl overflow-hidden focus-within:border-[#3d3e3f] transition-colors">
+            {/* Input */}
+            <div className="relative mb-6">
+              <div className="bg-[#1e1f20] border border-[#2d2e2f] rounded-2xl overflow-hidden focus-within:border-[#3d3e3f] transition-colors">
                 <textarea
                   ref={textareaRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="e.g., BTC to $120k by March, or Cut my losers..."
+                  placeholder="BTC is going to dump... Lakers win tonight... Peptides are the future..."
                   rows={1}
-                  className="w-full bg-transparent text-[#e8e8e8] placeholder-[#6b6c6d] px-5 py-4 pr-14 resize-none focus:outline-none text-base leading-relaxed"
-                  style={{ minHeight: "56px" }}
+                  className="w-full bg-transparent text-[#e8e8e8] placeholder-[#6b6c6d] px-5 py-4 pr-14 resize-none focus:outline-none text-lg"
+                  style={{ minHeight: "60px" }}
                 />
                 <button
                   onClick={handleSubmit}
                   disabled={!input.trim()}
-                  className={`absolute right-3 bottom-3 p-2.5 rounded-xl transition-all ${
-                    input.trim() ? "bg-[#20b2aa] hover:bg-[#2cc5bc] text-white" : "bg-[#2d2e2f] text-[#6b6c6d] cursor-not-allowed"
+                  className={`absolute right-3 bottom-3 p-3 rounded-xl transition-all ${
+                    input.trim() ? "bg-[#20b2aa] hover:bg-[#2cc5bc] text-white" : "bg-[#2d2e2f] text-[#6b6c6d]"
                   }`}
                 >
-                  <ArrowUp className="w-4 h-4" />
+                  <ArrowUp className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
-            {/* Examples - only show when no modal */}
+            {/* Examples - only when no modal */}
             {modalState.type === "none" && (
-              <div className="space-y-2 mb-8">
-                <div className="text-xs text-[#6b6c6d] uppercase tracking-wider mb-3">Try these examples</div>
-                <div className="grid grid-cols-2 gap-2">
-                  {examples.map((ex) => (
-                    <button
-                      key={ex.label}
-                      onClick={() => handleSuggestionClick(ex.text)}
-                      className="flex items-center gap-3 px-4 py-3 bg-[#1e1f20] hover:bg-[#242526] border border-[#2d2e2f] rounded-xl text-left transition-colors group"
-                    >
-                      <div className="w-6 h-6 rounded-full bg-[#20b2aa]/20 flex items-center justify-center text-xs font-semibold text-[#20b2aa] group-hover:bg-[#20b2aa]/30">
-                        {ex.label}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm text-[#e8e8e8] truncate">{ex.text}</div>
-                        <div className="text-xs text-[#6b6c6d]">{ex.desc}</div>
-                      </div>
-                    </button>
-                  ))}
+              <div className="mb-8">
+                <div className="text-xs text-[#6b6c6d] uppercase tracking-wider mb-3">Try these</div>
+                <div className="flex gap-2">
+                  {EXAMPLES.map((ex, i) => {
+                    const Icon = ex.type === "crypto" ? Coins : ex.type === "prediction" ? Vote : Building2;
+                    const colors = {
+                      crypto: "text-[#20b2aa] bg-[#20b2aa]/10",
+                      prediction: "text-purple-400 bg-purple-500/10",
+                      stock: "text-blue-400 bg-blue-500/10",
+                    };
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => handleExampleClick(ex)}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-[#1e1f20] hover:bg-[#242526] border border-[#2d2e2f] rounded-xl transition-colors"
+                      >
+                        <div className={`p-1.5 rounded-lg ${colors[ex.type]}`}>
+                          <Icon className="w-3.5 h-3.5" />
+                        </div>
+                        <span className="text-sm text-[#9a9b9c]">{ex.text}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
 
-            {/* Results area */}
+            {/* Results */}
             {modalState.type !== "none" && (
-              <div ref={resultsRef} className="mt-6">
-                {modalState.originalInput && (
-                  <div className="mb-4">
-                    <div className="text-lg font-medium text-[#e8e8e8] mb-1">&ldquo;{modalState.originalInput}&rdquo;</div>
-                  </div>
+              <div ref={resultsRef}>
+                {modalState.type === "crypto" && (
+                  <TradePlanCard
+                    plan={modalState.plan}
+                    prompt={modalState.prompt}
+                    onConfirm={handleConfirmCrypto}
+                    onRefine={clearModal}
+                  />
                 )}
-
-                {modalState.type === "trade" && (
-                  <TradePlanCard plan={modalState.plan} onConfirm={handleConfirmTrade} onRefine={() => clearModal()} />
-                )}
-                
                 {modalState.type === "twap" && (
-                  <TwapPlanCard plan={modalState.plan} onConfirm={handleConfirmTwap} onRefine={() => clearModal()} />
+                  <TwapPlanCard
+                    plan={modalState.plan}
+                    prompt={modalState.prompt}
+                    onConfirm={handleConfirmTwap}
+                    onRefine={clearModal}
+                  />
                 )}
-
-                {modalState.type === "portfolio_action" && (
-                  <PortfolioActionCard
-                    action={modalState.action}
-                    positions={trades}
-                    onExecute={() => { clearModal(); addToast("success", "Portfolio action executed", "All changes applied (demo)"); }}
+                {modalState.type === "prediction" && (
+                  <PredictionCard
+                    prediction={modalState.prompt}
+                    market={modalState.market}
+                    platform={modalState.platform}
+                    currentOdds={modalState.odds}
+                    onConfirm={handleConfirmPrediction}
                     onCancel={clearModal}
                   />
                 )}
-
-                {modalState.type === "target_trade" && (
-                  <TargetTradeCard
-                    symbol={modalState.symbol}
-                    targetPrice={modalState.targetPrice}
-                    deadline={modalState.deadline}
-                    onConfirm={handleTargetTradeConfirm}
+                {modalState.type === "stock" && (
+                  <StockCard
+                    prompt={modalState.prompt}
+                    ticker={modalState.ticker}
+                    companyName={modalState.company}
+                    currentPrice={modalState.price}
+                    thesis={modalState.thesis}
+                    onConfirm={handleConfirmStock}
                     onCancel={clearModal}
                   />
                 )}
-
-                {modalState.type === "thesis_explorer" && (
+                {modalState.type === "thesis" && (
                   <ThesisExplorerCard
                     thesis={modalState.thesis}
                     sentiment={modalState.sentiment}
@@ -509,18 +531,54 @@ export function RouterPage() {
               </div>
             )}
           </div>
-        </div>
 
-        <div className="flex-shrink-0 px-8 py-3 border-t border-[#2d2e2f]">
-          <p className="text-xs text-[#6b6c6d] text-center">Demo only • No real trading • All data is simulated</p>
+          {/* Portfolio sidebar */}
+          <div className="w-80 flex-shrink-0">
+            <div className="sticky top-8">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-semibold text-[#e8e8e8]">Your Positions</h2>
+                {hasPositions && (
+                  <span className="text-xs text-[#6b6c6d]">{portfolio.length} active</span>
+                )}
+              </div>
+
+              {!hasPositions ? (
+                <div className="text-center py-12 px-4 bg-[#1e1f20] rounded-xl border border-[#2d2e2f]">
+                  <div className="text-[#6b6c6d] mb-2">No positions yet</div>
+                  <div className="text-xs text-[#6b6c6d]">
+                    Type a view to get started
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {portfolio.map((plan) => (
+                    <PortfolioCard
+                      key={plan.id}
+                      plan={plan}
+                      onRemove={() => handleRemove(plan.id)}
+                      onLockRisk={'leverage' in plan ? () => handleLockRisk(plan.id) : undefined}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Demo notice */}
+              <div className="mt-4 text-xs text-[#6b6c6d] text-center">
+                Demo only • No real trades
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="w-80 flex-shrink-0">
-        <PlannedTradesPanel trades={trades} twaps={twaps} onLockRisk={handleLockRisk} onRemoveTrade={handleRemoveTrade} onRemoveTwap={handleRemoveTwap} />
-      </div>
+      {/* Lock Modal */}
+      <LockRiskModal
+        isOpen={showLockModal}
+        onClose={() => { setShowLockModal(false); setLockTarget(null); }}
+        onLock={handleConfirmLock}
+        plan={lockTarget}
+      />
 
-      <LockRiskModal isOpen={showLockModal} onClose={() => { setShowLockModal(false); setLockTarget(null); }} onLock={handleConfirmLock} plan={lockTarget} />
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
   );

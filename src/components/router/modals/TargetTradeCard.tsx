@@ -8,6 +8,7 @@ import { MiniChart } from "@/components/MiniChart";
 import { useLivePrices } from "@/lib/use-live-prices";
 
 interface TargetTradeCardProps {
+  prompt: string;
   symbol: string;
   targetPrice: number;
   deadline?: string; // e.g., "March", "end of year", "3 months"
@@ -15,7 +16,7 @@ interface TargetTradeCardProps {
   onCancel: () => void;
 }
 
-export function TargetTradeCard({ symbol, targetPrice, deadline, onConfirm, onCancel }: TargetTradeCardProps) {
+export function TargetTradeCard({ prompt, symbol, targetPrice, deadline, onConfirm, onCancel }: TargetTradeCardProps) {
   const { prices } = useLivePrices();
   const [risk, setRisk] = useState(3000);
   const [showDetails, setShowDetails] = useState(false);
@@ -53,6 +54,8 @@ export function TargetTradeCard({ symbol, targetPrice, deadline, onConfirm, onCa
   const handleConfirm = () => {
     const plan: TradePlan = {
       id: `trade-${Date.now()}`,
+      prompt,
+      marketType: "crypto",
       market: `${symbol}-PERP`,
       direction,
       maxRisk: risk,

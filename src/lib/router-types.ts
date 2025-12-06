@@ -1,7 +1,11 @@
 // Router feature types
 
+export type MarketType = "crypto" | "prediction" | "stock";
+
 export interface TradePlan {
   id: string;
+  prompt: string; // The original user input that created this trade
+  marketType: MarketType;
   market: string;
   direction: "long" | "short";
   maxRisk: number;
@@ -12,10 +16,13 @@ export interface TradePlan {
   leverage: number;
   status: "planned" | "confirmed" | "protected";
   createdAt: string;
+  // For bootstrapped markets (prediction/stock)
+  externalUrl?: string; // Link to execute on external platform
 }
 
 export interface TwapPlan {
   id: string;
+  prompt: string; // The original user input
   market: string;
   direction: "long" | "short";
   totalNotional: number;
@@ -26,6 +33,36 @@ export interface TwapPlan {
   priceRangeLow: number;
   priceRangeHigh: number;
   status: "planned" | "active";
+  createdAt: string;
+}
+
+export interface PredictionPlan {
+  id: string;
+  prompt: string;
+  marketType: "prediction";
+  market: string; // e.g., "Lakers beat Celtics tonight"
+  platform: "polymarket" | "kalshi";
+  side: "yes" | "no";
+  amount: number;
+  odds: number; // current price 0-1
+  potentialPayout: number;
+  externalUrl: string;
+  status: "planned" | "confirmed";
+  createdAt: string;
+}
+
+export interface StockPlan {
+  id: string;
+  prompt: string;
+  marketType: "stock";
+  ticker: string;
+  companyName: string;
+  direction: "long" | "short";
+  amount: number;
+  currentPrice: number;
+  externalUrl: string;
+  platform: "robinhood" | "schwab" | "fidelity";
+  status: "planned" | "confirmed";
   createdAt: string;
 }
 
@@ -43,52 +80,6 @@ export interface ParsedIntent {
   confidence?: number;
   originalInput?: string;
 }
-
-// Templates for demo
-export const BTC_SHORT_TEMPLATE: Omit<TradePlan, "id" | "createdAt" | "status"> = {
-  market: "BTC-PERP",
-  direction: "short",
-  maxRisk: 3000,
-  stopPrice: 92000,
-  size: 4.2,
-  sizeUnit: "BTC",
-  entryPrice: 90800,
-  leverage: 2.3,
-};
-
-export const ZEC_LONG_TEMPLATE: Omit<TradePlan, "id" | "createdAt" | "status"> = {
-  market: "ZEC-PERP",
-  direction: "long",
-  maxRisk: 2000,
-  stopPrice: 349,
-  size: 353,
-  sizeUnit: "ZEC",
-  entryPrice: 357,
-  leverage: 1.8,
-};
-
-export const SOL_LONG_TEMPLATE: Omit<TradePlan, "id" | "createdAt" | "status"> = {
-  market: "SOL-PERP",
-  direction: "long",
-  maxRisk: 3000,
-  stopPrice: 180,
-  size: 142,
-  sizeUnit: "SOL",
-  entryPrice: 195,
-  leverage: 2.1,
-};
-
-export const ZEC_TWAP_TEMPLATE: Omit<TwapPlan, "id" | "createdAt" | "status"> = {
-  market: "ZEC-PERP",
-  direction: "long",
-  totalNotional: 50000,
-  maxRisk: 3000,
-  stopPrice: 349,
-  duration: 15,
-  slices: 5,
-  priceRangeLow: 352,
-  priceRangeHigh: 358,
-};
 
 // Parse user input and detect intent
 export function parseRouterIntent(input: string): ParsedIntent {
