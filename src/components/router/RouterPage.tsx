@@ -9,9 +9,10 @@ import { TradePlanCard, TwapPlanCard } from "./TradePlanCard";
 import { TradeCard } from "./TradeCard";
 import { LockRiskModal } from "./LockRiskModal";
 import { ThinkingIndicator, getThinkingText } from "./ThinkingIndicator";
-import { PredictionCard, StockCard, ThesisExplorerCard, TargetTradeCard, PortfolioActionCard } from "./modals";
+import { PredictionCard, StockCard, ThesisExplorerCard, TargetTradeCard, PortfolioActionCard, ChartAnalystCard, TradeSetupCard, TradeSetup } from "./modals";
 import { AIResponseCard } from "./AIResponseCard";
 import { analyzeChart, fileToBase64 } from "@/lib/gemini";
+import { analyzeChartStructured, ChartAnalysis } from "@/lib/chart-analysis";
 import { ToastContainer, ToastMessage } from "@/components/Toast";
 import { FlashingPrice } from "@/components/AnimatedPrice";
 import { SparklineInline } from "@/components/Sparkline";
@@ -66,7 +67,9 @@ type ModalState =
   | { type: "target"; symbol: string; targetPrice: number; deadline?: string; prompt: string }
   | { type: "portfolio_action"; action: "reduce" | "hedge" | "close_all"; prompt: string }
   | { type: "ai_response"; response: string; image?: string; generatedImage?: string; prompt: string }
-  | { type: "ai_loading"; prompt: string };
+  | { type: "ai_loading"; prompt: string }
+  | { type: "chart_analyst"; analysis: ChartAnalysis; originalChart: string; prompt: string }
+  | { type: "trade_setup"; setup: TradeSetup; analysis: ChartAnalysis; originalChart: string; prompt: string };
 
 // Rich examples showing variety
 const EXAMPLES = [
@@ -261,29 +264,30 @@ export function RouterPage() {
     }
   }, []);
 
-  // Process image with Gemini
+  // Process image with Gemini - structured chart analysis
   const processImageWithAI = useCallback(async (imageBase64: string, prompt: string) => {
     setModalState({ type: "ai_loading", prompt });
     setInput("");
     setPastedImage(null);
 
     try {
-      const result = await analyzeChart(imageBase64, prompt || undefined);
+      const analysis = await analyzeChartStructured(imageBase64, prompt || undefined);
       
-      if (result.success) {
+      if (analysis.success) {
         setModalState({ 
-          type: "ai_response", 
-          response: result.text, 
-          image: imageBase64,
-          generatedImage: result.generatedImage, // Annotated chart if available
+          type: "chart_analyst", 
+          analysis,
+          originalChart: imageBase64,
           prompt 
         });
         
-        if (result.generatedImage) {
-          addToast("success", "Chart annotated", "AI drew technical analysis");
+        if (analysis.annotatedChart) {
+          addToast("success", "Chart analyzed", "Decision zone identified");
+        } else {
+          addToast("success", "Analysis complete", "Review the setup options");
         }
       } else {
-        addToast("error", "Analysis failed", result.error);
+        addToast("error", "Analysis failed", analysis.error);
         setModalState({ type: "none" });
       }
     } catch (error) {
@@ -534,6 +538,42 @@ export function RouterPage() {
     clearModal();
     addToast("success", "Portfolio updated", "Changes applied");
   }, [addToast, clearModal]);
+
+  // Chart analyst handlers
+  const handlePrepareShort = useCallback((setup: TradeSetup) => {
+    if (modalState.type === "chart_analyst") {
+      setModalState({
+        type: "trade_setup",
+        setup,
+        analysis: modalState.analysis,
+        originalChart: modalState.originalChart,
+        prompt: modalState.prompt,
+      });
+    }
+  }, [modalState]);
+
+  const handlePrepareLong = useCallback((setup: TradeSetup) => {
+    if (modalState.type === "chart_analyst") {
+      setModalState({
+        type: "trade_setup",
+        setup,
+        analysis: modalState.analysis,
+        originalChart: modalState.originalChart,
+        prompt: modalState.prompt,
+      });
+    }
+  }, [modalState]);
+
+  const handleBackToAnalysis = useCallback(() => {
+    if (modalState.type === "trade_setup") {
+      setModalState({
+        type: "chart_analyst",
+        analysis: modalState.analysis,
+        originalChart: modalState.originalChart,
+        prompt: modalState.prompt,
+      });
+    }
+  }, [modalState]);
 
   const handleRemove = useCallback((id: string) => {
     setPortfolio((prev) => prev.filter((p) => p.id !== id));
@@ -788,13 +828,38 @@ export function RouterPage() {
               </div>
             )}
 
-            {/* AI Response */}
+            {/* AI Response (legacy) */}
             {modalState.type === "ai_response" && (
               <div ref={resultsRef}>
                 <AIResponseCard 
                   response={modalState.response}
                   image={modalState.image}
                   generatedImage={modalState.generatedImage}
+                  onClose={clearModal}
+                />
+              </div>
+            )}
+
+            {/* Chart Analyst - Structured Analysis */}
+            {modalState.type === "chart_analyst" && (
+              <div ref={resultsRef}>
+                <ChartAnalystCard
+                  analysis={modalState.analysis}
+                  originalChart={modalState.originalChart}
+                  onPrepareShort={handlePrepareShort}
+                  onPrepareLong={handlePrepareLong}
+                  onClose={clearModal}
+                />
+              </div>
+            )}
+
+            {/* Trade Setup - Pre-filled values for terminal */}
+            {modalState.type === "trade_setup" && (
+              <div ref={resultsRef}>
+                <TradeSetupCard
+                  setup={modalState.setup}
+                  currentPrice={modalState.analysis.currentPrice}
+                  onBack={handleBackToAnalysis}
                   onClose={clearModal}
                 />
               </div>
