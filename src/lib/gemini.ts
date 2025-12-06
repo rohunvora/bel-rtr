@@ -1,20 +1,20 @@
 "use client";
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
 const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_AI_KEY;
 
-let genAI: GoogleGenerativeAI | null = null;
+let ai: GoogleGenAI | null = null;
 
-function getGenAI() {
+function getAI() {
   if (!API_KEY) {
     console.error("Google AI API key not configured");
     return null;
   }
-  if (!genAI) {
-    genAI = new GoogleGenerativeAI(API_KEY);
+  if (!ai) {
+    ai = new GoogleGenAI({ apiKey: API_KEY });
   }
-  return genAI;
+  return ai;
 }
 
 export interface GeminiResponse {
@@ -24,121 +24,108 @@ export interface GeminiResponse {
   error?: string;
 }
 
-// Try to analyze and draw on chart using experimental image output
+// Analyze and draw on chart using Nano Banana (image generation model)
 export async function analyzeChart(imageBase64: string, prompt?: string): Promise<GeminiResponse> {
-  const ai = getGenAI();
-  if (!ai) {
+  const client = getAI();
+  if (!client) {
     return { text: "", success: false, error: "API key not configured" };
   }
 
-  // First try experimental model with image generation
   try {
-    const model = ai.getGenerativeModel({ 
-      model: "gemini-2.0-flash-exp",
-    });
-    
-    const analysisPrompt = prompt || `Analyze this trading chart and provide technical analysis. Identify:
-1. Key support levels (with exact prices)
-2. Key resistance levels (with exact prices)
-3. Trendlines (direction and key points)
-4. Chart patterns if visible
-5. Overall bias (bullish/bearish/neutral)
+    const analysisPrompt = prompt || 
+      "Analyze this trading chart and draw technical analysis on it. Add support levels, resistance levels, and trendlines. Return the annotated chart.";
 
-Be specific with price levels. Format clearly.`;
-
-    const result = await model.generateContent({
-      contents: [{
-        role: "user",
-        parts: [
-          {
-            inlineData: {
-              mimeType: "image/png",
-              data: imageBase64,
+    // Use gemini-2.5-flash-image for image editing/generation
+    const response = await client.models.generateContent({
+      model: "gemini-2.5-flash-image",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              inlineData: {
+                mimeType: "image/png",
+                data: imageBase64,
+              },
             },
-          },
-          { text: analysisPrompt }
-        ]
-      }],
+            { text: analysisPrompt },
+          ],
+        },
+      ],
+      config: {
+        responseModalities: ["TEXT", "IMAGE"],
+      },
     });
 
-    const response = result.response;
-    
-    // Check for image parts in response
-    let generatedImage: string | undefined;
     let text = "";
+    let generatedImage: string | undefined;
+
+    // Parse response parts
+    const parts = response.candidates?.[0]?.content?.parts || [];
     
-    const candidate = response.candidates?.[0];
-    if (candidate?.content?.parts) {
-      for (const part of candidate.content.parts) {
-        if ('text' in part && part.text) {
-          text += part.text;
-        }
-        // Check for inline image data
-        if ('inlineData' in part && part.inlineData?.data) {
-          generatedImage = part.inlineData.data;
-        }
+    for (const part of parts) {
+      if (part.text) {
+        text += part.text;
+      }
+      if (part.inlineData?.data) {
+        generatedImage = part.inlineData.data;
       }
     }
-    
-    // Fallback to text() method
-    if (!text) {
-      text = response.text();
-    }
-    
+
     return { text, generatedImage, success: true };
   } catch (error: any) {
-    console.error("Experimental model error, falling back:", error.message);
+    console.error("Gemini image API error:", error);
     
-    // Fallback to stable model for text analysis
+    // Fallback to text-only analysis
     return fallbackTextAnalysis(imageBase64, prompt);
   }
 }
 
-// Fallback text-only analysis
+// Fallback text-only analysis using standard model
 async function fallbackTextAnalysis(imageBase64: string, prompt?: string): Promise<GeminiResponse> {
-  const ai = getGenAI();
-  if (!ai) {
+  const client = getAI();
+  if (!client) {
     return { text: "", success: false, error: "API key not configured" };
   }
 
   try {
-    // Try multiple models in order of preference
-    const models = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro-vision"];
-    
-    for (const modelName of models) {
-      try {
-        const model = ai.getGenerativeModel({ model: modelName });
-        
-        const analysisPrompt = prompt || `Analyze this trading chart. Identify:
+    const analysisPrompt = prompt || `Analyze this trading chart. Identify:
 1. Key support levels (with prices)
-2. Key resistance levels (with prices)
-3. Any trendlines
+2. Key resistance levels (with prices)  
+3. Trendlines (direction)
 4. Chart patterns
-5. Overall bias
+5. Overall bias (bullish/bearish/neutral)
 
-Be concise and specific with price levels.`;
+Be specific with price levels.`;
 
-        const result = await model.generateContent([
-          {
-            inlineData: {
-              mimeType: "image/png",
-              data: imageBase64,
+    const response = await client.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              inlineData: {
+                mimeType: "image/png",
+                data: imageBase64,
+              },
             },
-          },
-          analysisPrompt,
-        ]);
+            { text: analysisPrompt },
+          ],
+        },
+      ],
+    });
 
-        const response = result.response;
-        const text = response.text();
-        
-        return { text, success: true };
-      } catch (e: any) {
-        console.log(`Model ${modelName} failed, trying next...`);
-        continue;
+    const parts = response.candidates?.[0]?.content?.parts || [];
+    let text = "";
+    
+    for (const part of parts) {
+      if (part.text) {
+        text += part.text;
       }
     }
-    
-    return { text: "", success: false, error: "All models failed" };
+
+    return { text, success: true };
   } catch (error: any) {
     console.error("Fallback analysis error:", error);
     return { 
@@ -151,14 +138,12 @@ Be concise and specific with price levels.`;
 
 // General chat with optional image
 export async function chat(message: string, imageBase64?: string): Promise<GeminiResponse> {
-  const ai = getGenAI();
-  if (!ai) {
+  const client = getAI();
+  if (!client) {
     return { text: "", success: false, error: "API key not configured" };
   }
 
   try {
-    const model = ai.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
-    
     const parts: any[] = [];
     
     if (imageBase64) {
@@ -172,16 +157,23 @@ export async function chat(message: string, imageBase64?: string): Promise<Gemin
     
     parts.push({ text: message });
 
-    const result = await model.generateContent({
-      contents: [{ role: "user", parts }]
+    const response = await client.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: [{ role: "user", parts }],
     });
+
+    const responseParts = response.candidates?.[0]?.content?.parts || [];
+    let text = "";
     
-    const response = result.response;
-    const text = response.text();
-    
+    for (const part of responseParts) {
+      if (part.text) {
+        text += part.text;
+      }
+    }
+
     return { text, success: true };
   } catch (error: any) {
-    console.error("Gemini API error:", error);
+    console.error("Gemini chat error:", error);
     return { 
       text: "", 
       success: false, 
