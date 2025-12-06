@@ -346,8 +346,9 @@ export function RouterPage() {
       return;
     }
 
-    // Show thinking state first
+    // Show thinking state first and clear input
     setModalState({ type: "thinking", intentType, prompt: text });
+    setInput(""); // Clear input immediately
 
     // Then show result after delay
     setTimeout(() => {
@@ -592,47 +593,49 @@ export function RouterPage() {
               </div>
             )}
 
-            {/* Input */}
-            <div className="relative mb-6">
-              {/* Onboarding tooltip */}
-              {showOnboarding && (
-                <div className="absolute -top-16 left-0 right-0 animate-tooltip z-10">
-                  <div className="bg-[#20b2aa] text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center justify-between">
-                    <span className="text-sm">Type what you think will happen, or click an example below</span>
-                    <button onClick={dismissOnboarding} className="ml-3 p-1 hover:bg-white/20 rounded">
-                      <X className="w-4 h-4" />
-                    </button>
+            {/* Input - only show when no modal active */}
+            {modalState.type === "none" && (
+              <div className="relative mb-6">
+                {/* Onboarding tooltip */}
+                {showOnboarding && (
+                  <div className="absolute -top-16 left-0 right-0 animate-tooltip z-10">
+                    <div className="bg-[#20b2aa] text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center justify-between">
+                      <span className="text-sm">Type what you think will happen, or click an example below</span>
+                      <button onClick={dismissOnboarding} className="ml-3 p-1 hover:bg-white/20 rounded">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="w-4 h-4 bg-[#20b2aa] transform rotate-45 absolute left-8 -bottom-2" />
                   </div>
-                  <div className="w-4 h-4 bg-[#20b2aa] transform rotate-45 absolute left-8 -bottom-2" />
+                )}
+                
+                <div className="bg-[#1e1f20] border border-[#2d2e2f] rounded-xl overflow-hidden focus-within:border-[#3d3e3f] transition-colors hover-glow">
+                  <textarea
+                    ref={textareaRef}
+                    value={input}
+                    onChange={(e) => {
+                      setInput(e.target.value);
+                      if (showOnboarding) dismissOnboarding();
+                    }}
+                    onKeyDown={handleKeyDown}
+                    onFocus={() => showOnboarding && dismissOnboarding()}
+                    placeholder="BTC is going to dump... ETH to 5000 by March... Lakers win tonight..."
+                    rows={1}
+                    className="w-full bg-transparent text-[#e8e8e8] placeholder-[#4a4b4c] px-4 py-3.5 pr-14 resize-none focus:outline-none"
+                    style={{ minHeight: "52px" }}
+                  />
+                  <button
+                    onClick={handleSubmit}
+                    disabled={!input.trim()}
+                    className={`absolute right-2.5 bottom-2.5 p-2.5 rounded-lg transition-all btn-press ${
+                      input.trim() ? "bg-[#20b2aa] hover:bg-[#2cc5bc] text-white" : "bg-[#2d2e2f] text-[#4a4b4c]"
+                    }`}
+                  >
+                    <ArrowUp className="w-4 h-4" />
+                  </button>
                 </div>
-              )}
-              
-              <div className="bg-[#1e1f20] border border-[#2d2e2f] rounded-xl overflow-hidden focus-within:border-[#3d3e3f] transition-colors hover-glow">
-                <textarea
-                  ref={textareaRef}
-                  value={input}
-                  onChange={(e) => {
-                    setInput(e.target.value);
-                    if (showOnboarding) dismissOnboarding();
-                  }}
-                  onKeyDown={handleKeyDown}
-                  onFocus={() => showOnboarding && dismissOnboarding()}
-                  placeholder="BTC is going to dump... ETH to 5000 by March... Lakers win tonight..."
-                  rows={1}
-                  className="w-full bg-transparent text-[#e8e8e8] placeholder-[#4a4b4c] px-4 py-3.5 pr-14 resize-none focus:outline-none"
-                  style={{ minHeight: "52px" }}
-                />
-                <button
-                  onClick={handleSubmit}
-                  disabled={!input.trim()}
-                  className={`absolute right-2.5 bottom-2.5 p-2.5 rounded-lg transition-all btn-press ${
-                    input.trim() ? "bg-[#20b2aa] hover:bg-[#2cc5bc] text-white" : "bg-[#2d2e2f] text-[#4a4b4c]"
-                  }`}
-                >
-                  <ArrowUp className="w-4 h-4" />
-                </button>
               </div>
-            </div>
+            )}
 
             {/* Examples */}
             {modalState.type === "none" && (
