@@ -10,6 +10,7 @@ import { ThinkingIndicator, getThinkingText } from "./ThinkingIndicator";
 import { PredictionCard, StockCard, ThesisExplorerCard, TargetTradeCard, PortfolioActionCard } from "./modals";
 import { ToastContainer, ToastMessage } from "@/components/Toast";
 import { FlashingPrice } from "@/components/AnimatedPrice";
+import { SparklineInline } from "@/components/Sparkline";
 import { useLivePrices } from "@/lib/use-live-prices";
 import { usePersistedState, useOnboarding } from "@/lib/use-persisted-state";
 import {
@@ -549,17 +550,19 @@ export function RouterPage() {
             {["BTC", "ETH", "SOL"].map((symbol) => {
               const priceData = prices[symbol];
               if (!priceData) return (
-                <div key={symbol} className="flex items-center gap-2 text-sm">
+                <div key={symbol} className="flex items-center gap-3 text-sm">
                   <span className="text-[#6b6c6d]">{symbol}</span>
+                  <div className="w-12 h-4 bg-[#242526] rounded animate-pulse" />
                   <span className="text-[#4a4b4c] font-mono">---</span>
                 </div>
               );
               return (
                 <div key={symbol} className="flex items-center gap-2 text-sm">
                   <span className="text-[#6b6c6d]">{symbol}</span>
+                  <SparklineInline symbol={symbol} width={48} height={16} />
                   <FlashingPrice 
                     value={priceData.price} 
-                    decimals={symbol === "SOL" ? 0 : 0}
+                    decimals={0}
                     className="text-[#e8e8e8] font-mono"
                   />
                 </div>

@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, Lock, X, Clock, ExternalLink, Vote, Building2, Share2, Copy, Check } from "lucide-react";
+import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, Lock, X, Clock, ExternalLink, Vote, Building2, Copy, Check } from "lucide-react";
 import { TradePlan, PredictionPlan, StockPlan, formatCurrency, formatNumber } from "@/lib/router-types";
 import { FlashingPrice } from "@/components/AnimatedPrice";
+import { SparklineInline } from "@/components/Sparkline";
 import { useLivePrices } from "@/lib/use-live-prices";
 
 type AnyPlan = TradePlan | PredictionPlan | StockPlan;
@@ -217,6 +218,13 @@ export function TradeCard({ plan, index = 0, onRemove, onLockRisk, onShare }: Tr
             </span>
           )}
         </div>
+
+        {/* Sparkline for crypto */}
+        {isTradePlan(plan) && (
+          <div className="mt-2 pt-2 border-t border-[#2d2e2f]/50">
+            <SparklineInline symbol={plan.sizeUnit} width={100} height={24} className="w-full" />
+          </div>
+        )}
 
         {/* Time + Live price */}
         <div className="flex items-center justify-between mt-2 pt-2 border-t border-[#2d2e2f]/50">
