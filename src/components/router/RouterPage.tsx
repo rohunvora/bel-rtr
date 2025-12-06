@@ -1,19 +1,18 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Zap, ArrowUp, Sparkles } from "lucide-react";
+import { Zap, ArrowUp, Sparkles, Wifi, WifiOff } from "lucide-react";
 import { TradePlanCard, TwapPlanCard } from "./TradePlanCard";
 import { PlannedTradesPanel } from "./PlannedTradesPanel";
 import { LockRiskModal } from "./LockRiskModal";
 import { ToastContainer, ToastMessage } from "@/components/Toast";
+import { FlashingPrice } from "@/components/AnimatedPrice";
+import { useLivePrices, PriceData } from "@/lib/use-live-prices";
 import {
   TradePlan,
   TwapPlan,
   parseRouterIntent,
-  BTC_SHORT_TEMPLATE,
-  ZEC_LONG_TEMPLATE,
-  SOL_LONG_TEMPLATE,
-  ZEC_TWAP_TEMPLATE,
+  calculateSize,
 } from "@/lib/router-types";
 
 type PlanResult = 
@@ -21,7 +20,42 @@ type PlanResult =
   | { type: "twap"; plan: Omit<TwapPlan, "id" | "createdAt" | "status">; interpretation?: string; confidence?: number; originalInput?: string }
   | null;
 
+// Helper to create trade plan from live price
+function createTradePlan(
+  market: string,
+  direction: "long" | "short",
+  price: number,
+  risk: number = 3000
+): Omit<TradePlan, "id" | "createdAt" | "status"> {
+  const symbol = market.split("-")[0];
+  
+  // Calculate stop based on direction (2% away for demo)
+  const stopDistance = price * 0.02;
+  const stopPrice = direction === "long" 
+    ? Math.round(price - stopDistance) 
+    : Math.round(price + stopDistance);
+  
+  // Calculate size based on risk
+  const size = calculateSize(risk, price, stopPrice, direction);
+  
+  // Calculate leverage (notional / risk)
+  const notional = size * price;
+  const leverage = Math.round((notional / risk) * 10) / 10;
+
+  return {
+    market,
+    direction,
+    maxRisk: risk,
+    stopPrice,
+    size: Math.abs(size),
+    sizeUnit: symbol,
+    entryPrice: price,
+    leverage,
+  };
+}
+
 export function RouterPage() {
+  const { prices, isConnected } = useLivePrices();
   const [input, setInput] = useState("");
   const [currentPlan, setCurrentPlan] = useState<PlanResult>(null);
   const [trades, setTrades] = useState<TradePlan[]>([]);
@@ -60,10 +94,21 @@ export function RouterPage() {
     const intent = parseRouterIntent(text);
 
     if (intent.type === "twap") {
-      const template = { ...ZEC_TWAP_TEMPLATE };
-      if (intent.market) template.market = intent.market;
-      if (intent.risk) template.maxRisk = intent.risk;
-      if (intent.notional) template.totalNotional = intent.notional;
+      const symbol = intent.market?.split("-")[0] || "ZEC";
+      const livePrice = prices[symbol]?.price || 67; // fallback
+      
+      const template = {
+        market: intent.market || "ZEC-PERP",
+        direction: intent.direction || "long" as const,
+        totalNotional: intent.notional || 50000,
+        maxRisk: intent.risk || 3000,
+        stopPrice: Math.round(livePrice * 0.95), // 5% below for long
+        duration: 15,
+        slices: 5,
+        priceRangeLow: Math.round(livePrice * 0.99),
+        priceRangeHigh: Math.round(livePrice * 1.01),
+      };
+
       setCurrentPlan({ 
         type: "twap", 
         plan: template,
@@ -72,27 +117,25 @@ export function RouterPage() {
         originalInput: intent.originalInput,
       });
     } else if (intent.type === "trade") {
-      let template;
-      if (intent.market === "BTC-PERP" && intent.direction === "short") {
-        template = { ...BTC_SHORT_TEMPLATE };
-      } else if (intent.market === "ZEC-PERP") {
-        template = { ...ZEC_LONG_TEMPLATE };
-      } else if (intent.market === "SOL-PERP") {
-        template = { ...SOL_LONG_TEMPLATE };
-      } else if (intent.market === "ETH-PERP") {
-        // ETH template - create on the fly based on direction
-        template = intent.direction === "short" 
-          ? { ...BTC_SHORT_TEMPLATE, market: "ETH-PERP", sizeUnit: "ETH", size: 1.8, entryPrice: 3400, stopPrice: 3550 }
-          : { ...SOL_LONG_TEMPLATE, market: "ETH-PERP", sizeUnit: "ETH", size: 0.9, entryPrice: 3400, stopPrice: 3200 };
-      } else {
-        template = intent.direction === "short" 
-          ? { ...BTC_SHORT_TEMPLATE }
-          : { ...SOL_LONG_TEMPLATE };
+      const symbol = intent.market?.split("-")[0] || "BTC";
+      const livePrice = prices[symbol]?.price;
+      
+      if (!livePrice) {
+        addToast("error", "Price not available", "Waiting for market data...");
+        return;
       }
 
-      if (intent.direction) template.direction = intent.direction;
-      if (intent.risk) template.maxRisk = intent.risk;
-      if (intent.stop) template.stopPrice = intent.stop;
+      const direction = intent.direction || "long";
+      const risk = intent.risk || 3000;
+      
+      // Use user's stop if provided, otherwise calculate
+      let template = createTradePlan(intent.market || "BTC-PERP", direction, livePrice, risk);
+      
+      if (intent.stop) {
+        template.stopPrice = intent.stop;
+        // Recalculate size with user's stop
+        template.size = Math.abs(calculateSize(risk, livePrice, intent.stop, direction));
+      }
 
       setCurrentPlan({ 
         type: "trade", 
@@ -104,7 +147,7 @@ export function RouterPage() {
     } else {
       addToast("error", "Couldn't understand that", "Try something like 'I think BTC is going to dump'");
     }
-  }, [addToast]);
+  }, [addToast, prices]);
 
   const handleSubmit = () => {
     if (input.trim()) {
@@ -181,14 +224,44 @@ export function RouterPage() {
       {/* Main content area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="flex-shrink-0 px-8 py-5 border-b border-[#2d2e2f]">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#20b2aa] to-[#20b2aa]/60 flex items-center justify-center">
-              <Zap className="w-4 h-4 text-white" />
+        <header className="flex-shrink-0 px-8 py-4 border-b border-[#2d2e2f]">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#20b2aa] to-[#20b2aa]/60 flex items-center justify-center">
+                <Zap className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <h1 className="text-lg font-semibold text-[#e8e8e8]">Router</h1>
+                <p className="text-xs text-[#6b6c6d]">Structure trades with built-in risk limits</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-lg font-semibold text-[#e8e8e8]">Router</h1>
-              <p className="text-xs text-[#6b6c6d]">Structure trades with built-in risk limits</p>
+
+            {/* Live prices ticker */}
+            <div className="flex items-center gap-6">
+              {["BTC", "ETH", "SOL"].map((symbol) => {
+                const priceData = prices[symbol];
+                if (!priceData) return null;
+                const isUp = priceData.changePercent24h >= 0;
+                return (
+                  <div key={symbol} className="flex items-center gap-2">
+                    <span className="text-xs text-[#6b6c6d]">{symbol}</span>
+                    <FlashingPrice 
+                      value={priceData.price} 
+                      decimals={symbol === "BTC" ? 0 : symbol === "ETH" ? 0 : 2}
+                      className="text-sm text-[#e8e8e8]"
+                    />
+                    <span className={`text-xs ${isUp ? "text-[#20b2aa]" : "text-red-400"}`}>
+                      {isUp ? "+" : ""}{priceData.changePercent24h.toFixed(1)}%
+                    </span>
+                  </div>
+                );
+              })}
+              
+              {/* Connection status */}
+              <div className={`flex items-center gap-1.5 text-xs ${isConnected ? "text-[#20b2aa]" : "text-[#6b6c6d]"}`}>
+                {isConnected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+                <span>{isConnected ? "Live" : "Connecting..."}</span>
+              </div>
             </div>
           </div>
         </header>

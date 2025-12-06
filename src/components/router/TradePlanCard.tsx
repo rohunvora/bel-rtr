@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ChevronDown, ChevronUp, Shield, TrendingUp, TrendingDown, Clock, Check } from "lucide-react";
+import { ChevronDown, ChevronUp, TrendingUp, TrendingDown, Clock, Check } from "lucide-react";
 import { TradePlan, TwapPlan, formatCurrency, formatNumber, calculateSize } from "@/lib/router-types";
+import { FlashingPrice } from "@/components/AnimatedPrice";
 
 interface TradePlanCardProps {
   plan: Omit<TradePlan, "id" | "createdAt" | "status">;
@@ -95,8 +96,12 @@ export function TradePlanCard({ plan: initialPlan, onConfirm, onRefine }: TradeP
           </div>
           <div className="px-5 py-4">
             <div className="text-xs text-[#6b6c6d] mb-1">Entry</div>
-            <div className="text-2xl font-semibold text-[#e8e8e8] font-mono">
-              ~{formatNumber(initialPlan.entryPrice, initialPlan.entryPrice > 1000 ? 0 : 2)}
+            <div className="text-2xl font-semibold text-[#e8e8e8]">
+              <FlashingPrice 
+                value={initialPlan.entryPrice} 
+                prefix="~$"
+                decimals={initialPlan.entryPrice > 1000 ? 0 : 2}
+              />
             </div>
           </div>
         </div>

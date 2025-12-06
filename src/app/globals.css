@@ -128,3 +128,47 @@ button:focus {
 .animate-slide-up {
   animation: slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+/* Price ticker animations - Robinhood style */
+@keyframes tick-up {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(-4px);
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes tick-down {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(4px);
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-tick-up {
+  animation: tick-up 0.3s ease-out;
+}
+
+.animate-tick-down {
+  animation: tick-down 0.3s ease-out;
+}
+
+/* Tabular nums for prices */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
