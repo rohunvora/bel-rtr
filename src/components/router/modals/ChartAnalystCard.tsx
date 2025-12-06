@@ -418,9 +418,11 @@ export function ChartAnalystCard({
   // Chat state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
+  const [chatImage, setChatImage] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const displayChart = viewMode === "annotated" && annotatedChart ? annotatedChart : originalChart;
   const showAnnotatedView = viewMode === "annotated" && annotationStatus === "ready" && annotatedChart;
@@ -454,18 +456,70 @@ Keep responses concise and actionable. Reference the zone and scenarios when rel
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages, isTyping]);
 
+  // Handle pasting image in chat
+  const handleChatPaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const base64 = (reader.result as string).split(",")[1];
+            setChatImage(base64);
+          };
+          reader.readAsDataURL(file);
+        }
+        break;
+      }
+    }
+  };
+
+  // Handle file upload in chat
+  const handleChatFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = (reader.result as string).split(",")[1];
+        setChatImage(base64);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   // Handle sending message
   const handleSendMessage = async () => {
-    if (!inputValue.trim() || isTyping) return;
+    if ((!inputValue.trim() && !chatImage) || isTyping) return;
     
-    const userMessage: ChatMessage = { role: "user", content: inputValue.trim() };
+    const userMessage: ChatMessage = { 
+      role: "user", 
+      content: inputValue.trim() || "What do you see here?",
+      image: chatImage || undefined
+    };
     const newMessages = [...chatMessages, userMessage];
     setChatMessages(newMessages);
     setInputValue("");
+    setChatImage(null);
     setIsTyping(true);
     
+    // Build context including original chart
+    const fullContext = `${systemContext}
+
+Original chart is attached to this conversation for reference.`;
+    
+    // Include original chart in first message context
+    const messagesWithOriginal: ChatMessage[] = [
+      { role: "user", content: "Here is the chart I'm analyzing:", image: originalChart },
+      { role: "model", content: "I see the chart. I've identified the key zone and scenarios as described in my analysis." },
+      ...newMessages
+    ];
+    
     try {
-      const response = await chatWithHistory(newMessages, systemContext);
+      const response = await chatWithHistory(messagesWithOriginal, fullContext);
       if (response.success) {
         setChatMessages([...newMessages, { role: "model", content: response.text }]);
       } else {
@@ -689,31 +743,68 @@ Keep responses concise and actionable. Reference the zone and scenarios when rel
           
           {/* Chat input */}
           <div className="px-5 py-4 bg-[#161717]">
+            {/* Image preview */}
+            {chatImage && (
+              <div className="mb-3 relative inline-block animate-fade-in">
+                <img 
+                  src={`data:image/png;base64,${chatImage}`}
+                  alt="Chart to send"
+                  className="max-h-24 rounded-lg border border-[#2d2e2f]"
+                />
+                <button
+                  onClick={() => setChatImage(null)}
+                  className="absolute -top-2 -right-2 p-1 bg-[#242526] border border-[#2d2e2f] rounded-full hover:bg-rose-500/20 hover:border-rose-500/30 transition-colors"
+                >
+                  <X className="w-3 h-3 text-[#9a9b9c]" />
+                </button>
+              </div>
+            )}
+            
             <div className="relative">
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleChatFileUpload}
+                className="hidden"
+              />
+              
               <textarea
                 ref={inputRef}
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask a follow-up question..."
+                onPaste={handleChatPaste}
+                placeholder={chatImage ? "Add a message about this chart..." : "Ask a follow-up or paste a new chart..."}
                 rows={1}
-                className="w-full bg-[#242526] border border-[#2d2e2f] rounded-xl text-[#e8e8e8] placeholder-[#6b6c6d] px-4 py-3 pr-12 resize-none focus:outline-none focus:border-cyan-500/50 transition-colors text-sm"
+                className="w-full bg-[#242526] border border-[#2d2e2f] rounded-xl text-[#e8e8e8] placeholder-[#6b6c6d] pl-4 pr-24 py-3 resize-none focus:outline-none focus:border-cyan-500/50 transition-colors text-sm"
                 style={{ minHeight: "44px" }}
               />
-              <button
-                onClick={handleSendMessage}
-                disabled={!inputValue.trim() || isTyping}
-                className={`absolute right-2 bottom-2 p-2 rounded-lg transition-all ${
-                  inputValue.trim() && !isTyping
-                    ? "bg-cyan-500 hover:bg-cyan-400 text-white" 
-                    : "bg-[#2d2e2f] text-[#6b6c6d]"
-                }`}
-              >
-                {isTyping ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              </button>
+              
+              <div className="absolute right-2 bottom-2 flex items-center gap-1">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-2 rounded-lg hover:bg-[#2d2e2f] text-[#6b6c6d] hover:text-[#9a9b9c] transition-colors"
+                  title="Upload chart"
+                >
+                  <ImageIcon className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleSendMessage}
+                  disabled={(!inputValue.trim() && !chatImage) || isTyping}
+                  className={`p-2 rounded-lg transition-all ${
+                    (inputValue.trim() || chatImage) && !isTyping
+                      ? "bg-cyan-500 hover:bg-cyan-400 text-white" 
+                      : "bg-[#2d2e2f] text-[#6b6c6d]"
+                  }`}
+                >
+                  {isTyping ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
             <div className="mt-2 text-xs text-[#6b6c6d] text-center">
-              Press Enter to send • Shift+Enter for new line
+              Paste or upload charts • Enter to send • Shift+Enter for new line
             </div>
           </div>
         </div>
