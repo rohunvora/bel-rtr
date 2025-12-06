@@ -245,6 +245,7 @@ button:focus {
 /* Hover interactions */
 .hover-lift {
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+  cursor: pointer;
 }
 
 .hover-lift:hover {
@@ -260,8 +261,14 @@ button:focus {
   box-shadow: 0 0 20px rgba(32, 178, 170, 0.15);
 }
 
+/* Clickable cards */
+.card-hover {
+  cursor: pointer;
+}
+
 .hover-scale {
   transition: transform 0.15s ease;
+  cursor: pointer;
 }
 
 .hover-scale:hover {
@@ -275,10 +282,16 @@ button:focus {
 /* Button press effect */
 .btn-press {
   transition: transform 0.1s ease;
+  cursor: pointer;
 }
 
 .btn-press:active {
   transform: scale(0.96);
+}
+
+/* Ensure all buttons have pointer cursor */
+button:not(:disabled) {
+  cursor: pointer;
 }
 
 /* Subtle pulse for interactive elements */
