@@ -9,6 +9,8 @@ export interface PriceData {
   change24h: number;
   changePercent24h: number;
   lastUpdate: number;
+  fundingRate?: number; // Current funding rate (e.g., 0.0001 = 0.01%)
+  nextFundingTime?: number; // Unix timestamp
 }
 
 export type PriceMap = Record<string, PriceData>;
@@ -93,6 +95,51 @@ export function useLivePrices() {
     wsRef.current = ws;
   }, []);
 
+  // Fetch funding rates from Binance Futures
+  const fetchFundingRates = useCallback(async () => {
+    try {
+      const response = await fetch(
+        `https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT`
+      );
+      const btcData = await response.json();
+      
+      // Fetch for other symbols too
+      const symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
+      const fundingData: Record<string, { rate: number; time: number }> = {};
+      
+      for (const sym of symbols) {
+        try {
+          const res = await fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${sym}`);
+          const data = await res.json();
+          const ourSymbol = sym.replace("USDT", "");
+          fundingData[ourSymbol] = {
+            rate: parseFloat(data.lastFundingRate),
+            time: data.nextFundingTime,
+          };
+        } catch (e) {
+          // Skip if individual fetch fails
+        }
+      }
+
+      // Update prices with funding data
+      setPrices(prev => {
+        const updated = { ...prev };
+        for (const [symbol, funding] of Object.entries(fundingData)) {
+          if (updated[symbol]) {
+            updated[symbol] = {
+              ...updated[symbol],
+              fundingRate: funding.rate,
+              nextFundingTime: funding.time,
+            };
+          }
+        }
+        return updated;
+      });
+    } catch (e) {
+      console.error("Failed to fetch funding rates", e);
+    }
+  }, []);
+
   // Initial fetch via REST to get prices immediately
   const fetchInitialPrices = useCallback(async () => {
     try {
@@ -118,18 +165,21 @@ export function useLivePrices() {
         }
       }
       setPrices(initialPrices);
+      
+      // Also fetch funding rates
+      fetchFundingRates();
     } catch (e) {
       console.error("Failed to fetch initial prices", e);
       // Fallback prices if API fails
       const fallback: PriceMap = {
-        BTC: { symbol: "BTC", price: 97500, prevPrice: 97500, change24h: 0, changePercent24h: 0, lastUpdate: Date.now() },
-        ETH: { symbol: "ETH", price: 3650, prevPrice: 3650, change24h: 0, changePercent24h: 0, lastUpdate: Date.now() },
-        SOL: { symbol: "SOL", price: 235, prevPrice: 235, change24h: 0, changePercent24h: 0, lastUpdate: Date.now() },
-        ZEC: { symbol: "ZEC", price: 67, prevPrice: 67, change24h: 0, changePercent24h: 0, lastUpdate: Date.now() },
+        BTC: { symbol: "BTC", price: 97500, prevPrice: 97500, change24h: 0, changePercent24h: 0, lastUpdate: Date.now(), fundingRate: 0.0001 },
+        ETH: { symbol: "ETH", price: 3650, prevPrice: 3650, change24h: 0, changePercent24h: 0, lastUpdate: Date.now(), fundingRate: 0.0001 },
+        SOL: { symbol: "SOL", price: 235, prevPrice: 235, change24h: 0, changePercent24h: 0, lastUpdate: Date.now(), fundingRate: 0.0001 },
+        ZEC: { symbol: "ZEC", price: 67, prevPrice: 67, change24h: 0, changePercent24h: 0, lastUpdate: Date.now(), fundingRate: 0.0001 },
       };
       setPrices(fallback);
     }
-  }, []);
+  }, [fetchFundingRates]);
 
   useEffect(() => {
     fetchInitialPrices();
