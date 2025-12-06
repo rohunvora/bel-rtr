@@ -1,6 +1,8 @@
+"use client";
+
 import { HelpCircle, Book, MessageCircle } from "lucide-react";
 
-export function HelpView() {
+export function HelpView({ onAction }: { onAction?: (title: string, msg: string) => void }) {
   return (
     <div className="max-w-3xl mx-auto px-6 py-8">
       <h2 className="text-2xl font-semibold text-[#e8e8e8] mb-6">Help & Support</h2>
@@ -16,7 +18,12 @@ export function HelpView() {
           <p className="text-[#6b6c6d] text-sm mb-4">
             Learn how to use the router, understand order types, and manage your portfolio.
           </p>
-          <button className="text-[#20b2aa] text-sm hover:underline">Read the guide →</button>
+          <button 
+            onClick={() => onAction?.("Documentation", "Opening guide...")}
+            className="text-[#20b2aa] text-sm hover:underline"
+          >
+            Read the guide →
+          </button>
         </div>
 
         <div className="bg-[#1e1f20] border border-[#2d2e2f] rounded-xl p-6">
@@ -29,7 +36,12 @@ export function HelpView() {
           <p className="text-[#6b6c6d] text-sm mb-4">
             Need help with a specific issue? Our team is available 24/7.
           </p>
-          <button className="text-[#20b2aa] text-sm hover:underline">Contact support →</button>
+          <button 
+            onClick={() => onAction?.("Support", "Connecting to agent...")}
+            className="text-[#20b2aa] text-sm hover:underline"
+          >
+            Contact support →
+          </button>
         </div>
 
         <div className="bg-[#1e1f20] border border-[#2d2e2f] rounded-xl p-6">
@@ -40,13 +52,13 @@ export function HelpView() {
             <h3 className="text-lg font-medium text-[#e8e8e8]">FAQ</h3>
           </div>
           <div className="space-y-3">
-            <details className="text-sm">
-              <summary className="text-[#e8e8e8] cursor-pointer hover:text-[#20b2aa] transition-colors">How are fees calculated?</summary>
-              <p className="text-[#6b6c6d] mt-2 pl-4">Fees are calculated based on the notional value of your position...</p>
+            <details className="text-sm group">
+              <summary className="text-[#e8e8e8] cursor-pointer hover:text-[#20b2aa] transition-colors marker:text-[#6b6c6d]">How are fees calculated?</summary>
+              <p className="text-[#6b6c6d] mt-2 pl-4">Fees are calculated based on the notional value of your position. Taker fees are 0.05% and maker fees are 0.02%.</p>
             </details>
-            <details className="text-sm">
-              <summary className="text-[#e8e8e8] cursor-pointer hover:text-[#20b2aa] transition-colors">What is the max leverage?</summary>
-              <p className="text-[#6b6c6d] mt-2 pl-4">Max leverage depends on the asset class...</p>
+            <details className="text-sm group">
+              <summary className="text-[#e8e8e8] cursor-pointer hover:text-[#20b2aa] transition-colors marker:text-[#6b6c6d]">What is the max leverage?</summary>
+              <p className="text-[#6b6c6d] mt-2 pl-4">Max leverage depends on the asset class. Crypto perps allow up to 20x, while stocks are capped at 5x.</p>
             </details>
           </div>
         </div>
@@ -54,4 +66,3 @@ export function HelpView() {
     </div>
   );
 }
-

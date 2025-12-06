@@ -65,7 +65,7 @@ type ModalState =
   | { type: "thesis"; thesis: string; sentiment: "bullish" | "bearish"; prompt: string }
   | { type: "target"; symbol: string; targetPrice: number; deadline?: string; prompt: string }
   | { type: "portfolio_action"; action: "reduce" | "hedge" | "close_all"; prompt: string }
-  | { type: "ai_response"; response: string; image?: string; prompt: string }
+  | { type: "ai_response"; response: string; image?: string; generatedImage?: string; prompt: string }
   | { type: "ai_loading"; prompt: string };
 
 // Rich examples showing variety
@@ -220,6 +220,10 @@ export function RouterPage() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  const handleAction = useCallback((title: string, message: string) => {
+    addToast("success", title, message);
+  }, [addToast]);
+
   // Thinking delay duration (ms) - varies slightly for realism
   const getThinkingDuration = () => 800 + Math.random() * 600;
 
@@ -271,8 +275,13 @@ export function RouterPage() {
           type: "ai_response", 
           response: result.text, 
           image: imageBase64,
+          generatedImage: result.generatedImage, // Annotated chart if available
           prompt 
         });
+        
+        if (result.generatedImage) {
+          addToast("success", "Chart annotated", "AI drew technical analysis");
+        }
       } else {
         addToast("error", "Analysis failed", result.error);
         setModalState({ type: "none" });
@@ -589,13 +598,18 @@ export function RouterPage() {
   return (
     <div className="flex h-screen bg-[#191a1a]">
       {/* Slim sidebar */}
-      <Sidebar isCollapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
+      <Sidebar 
+        isCollapsed={sidebarCollapsed} 
+        onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} 
+        activePage={activePage}
+        onNavigate={setActivePage}
+      />
 
       {/* Main content */}
       <div className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'lg:pl-0' : ''}`}>
         {/* Header with live prices */}
         <header className="h-14 border-b border-[#2d2e2f] flex items-center justify-between px-6">
-          <h1 className="text-[#e8e8e8] font-medium">Trade</h1>
+          <h1 className="text-[#e8e8e8] font-medium capitalize">{activePage}</h1>
           
           <div className="flex items-center gap-6">
             {["BTC", "ETH", "SOL"].map((symbol) => {
@@ -630,7 +644,8 @@ export function RouterPage() {
 
         {/* Main area */}
         <div className="flex-1 overflow-y-auto">
-          <div className="max-w-3xl mx-auto px-6 py-8">
+          {activePage === "trade" ? (
+            <div className="max-w-3xl mx-auto px-6 py-8">
             {/* Hero when no modal */}
             {modalState.type === "none" && (
               <div className="mb-6">
@@ -779,6 +794,7 @@ export function RouterPage() {
                 <AIResponseCard 
                   response={modalState.response}
                   image={modalState.image}
+                  generatedImage={modalState.generatedImage}
                   onClose={clearModal}
                 />
               </div>
@@ -881,6 +897,11 @@ export function RouterPage() {
               </div>
             )}
           </div>
+          ) : activePage === "settings" ? (
+            <SettingsView onAction={handleAction} />
+          ) : (
+            <HelpView onAction={handleAction} />
+          )}
         </div>
       </div>
 

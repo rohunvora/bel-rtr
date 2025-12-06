@@ -1,4 +1,10 @@
-export function SettingsView() {
+"use client";
+
+import { useState } from "react";
+
+export function SettingsView({ onAction }: { onAction?: (title: string, msg: string) => void }) {
+  const [notifications, setNotifications] = useState(true);
+
   return (
     <div className="max-w-3xl mx-auto px-6 py-8">
       <h2 className="text-2xl font-semibold text-[#e8e8e8] mb-6">Settings</h2>
@@ -14,8 +20,15 @@ export function SettingsView() {
               <div className="text-[#e8e8e8] font-medium">Notifications</div>
               <div className="text-[#6b6c6d] text-xs">Receive updates about your trades</div>
             </div>
-            <div className="w-10 h-6 bg-[#20b2aa] rounded-full relative cursor-pointer">
-              <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full" />
+            <div 
+              className={`w-10 h-6 rounded-full relative cursor-pointer transition-colors ${notifications ? "bg-[#20b2aa]" : "bg-[#3d3e3f]"}`}
+              onClick={() => {
+                const newState = !notifications;
+                setNotifications(newState);
+                onAction?.("Notifications", newState ? "Enabled" : "Disabled");
+              }}
+            >
+              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${notifications ? "right-1" : "left-1"}`} />
             </div>
           </div>
 
@@ -31,4 +44,3 @@ export function SettingsView() {
     </div>
   );
 }
-
