@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Command, TrendingUp, TrendingDown } from "lucide-react";
-import { Sidebar } from "@/components/Sidebar";
+import { Sidebar, TabType } from "@/components/Sidebar";
 import { PositionCard } from "@/components/PositionCard";
 import { PairPositionCard } from "@/components/PairPositionCard";
 import { EventCard } from "@/components/EventCard";
@@ -10,6 +10,7 @@ import { MoversPanel } from "@/components/MoversPanel";
 import { MarketsPanel } from "@/components/MarketsPanel";
 import { CommandBar } from "@/components/CommandBar";
 import { ToastContainer, ToastMessage } from "@/components/Toast";
+import { RouterPage } from "@/components/router";
 import { 
   initialPositions, 
   initialPairPositions,
@@ -50,6 +51,9 @@ function TutorialCommand({
 }
 
 export default function Home() {
+  // Tab state
+  const [activeTab, setActiveTab] = useState<TabType>("dashboard");
+  
   // Start empty to show tutorial on first load
   const [positions, setPositions] = useState<Position[]>([]);
   const [pairPositions, setPairPositions] = useState<PairPosition[]>([]);
@@ -323,8 +327,21 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#191a1a]">
-      <Sidebar onNewTrade={() => setCommandBarOpen(true)} />
+      <Sidebar 
+        onNewTrade={() => setCommandBarOpen(true)} 
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+      />
 
+      {/* Router Tab */}
+      {activeTab === "router" && (
+        <main className="ml-[68px] min-h-screen">
+          <RouterPage />
+        </main>
+      )}
+
+      {/* Dashboard Tab */}
+      {activeTab === "dashboard" && (
       <main className="ml-[68px] min-h-screen">
         {/* Header */}
         <header className="sticky top-0 z-30 bg-[#191a1a]/80 backdrop-blur-md border-b border-[#2d2e2f]">
@@ -579,6 +596,7 @@ export default function Home() {
           </div>
         </div>
       </main>
+      )}
 
       <CommandBar
         isOpen={commandBarOpen}

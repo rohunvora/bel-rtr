@@ -1,12 +1,16 @@
 "use client";
 
-import { LayoutDashboard, History, Settings, Plus, Bell } from "lucide-react";
+import { LayoutDashboard, History, Settings, Plus, Bell, Zap } from "lucide-react";
+
+export type TabType = "dashboard" | "router";
 
 interface SidebarProps {
   onNewTrade: () => void;
+  activeTab?: TabType;
+  onTabChange?: (tab: TabType) => void;
 }
 
-export function Sidebar({ onNewTrade }: SidebarProps) {
+export function Sidebar({ onNewTrade, activeTab = "dashboard", onTabChange }: SidebarProps) {
   return (
     <aside className="fixed left-0 top-0 h-full w-[68px] bg-[#191a1a] border-r border-[#2d2e2f] flex flex-col items-center py-4 z-40">
       {/* Logo */}
@@ -55,7 +59,18 @@ export function Sidebar({ onNewTrade }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex flex-col items-center gap-2 flex-1">
-        <NavItem icon={<LayoutDashboard className="w-5 h-5" />} label="Dashboard" active />
+        <NavItem 
+          icon={<LayoutDashboard className="w-5 h-5" />} 
+          label="Dashboard" 
+          active={activeTab === "dashboard"}
+          onClick={() => onTabChange?.("dashboard")}
+        />
+        <NavItem 
+          icon={<Zap className="w-5 h-5" />} 
+          label="Router" 
+          active={activeTab === "router"}
+          onClick={() => onTabChange?.("router")}
+        />
         <NavItem icon={<History className="w-5 h-5" />} label="History" />
         <NavItem icon={<Settings className="w-5 h-5" />} label="Settings" />
       </nav>
@@ -77,13 +92,16 @@ function NavItem({
   icon,
   label,
   active = false,
+  onClick,
 }: {
   icon: React.ReactNode;
   label: string;
   active?: boolean;
+  onClick?: () => void;
 }) {
   return (
     <button
+      onClick={onClick}
       className={`relative w-10 h-10 rounded-lg flex flex-col items-center justify-center transition-colors group ${
         active ? "bg-[#242526] text-white" : "hover:bg-[#242526] text-[#6b6c6d] hover:text-[#9a9b9c]"
       }`}
