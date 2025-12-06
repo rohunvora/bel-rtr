@@ -8,21 +8,21 @@ import {
   TrendingUp, 
   Clock, 
   Zap, 
-  AlertCircle,
   Target,
-  Shield,
-  Copy,
-  Check,
   X,
   Eye,
   EyeOff,
-  ArrowRight
+  ArrowRight,
+  Loader2,
+  AlertCircle
 } from "lucide-react";
 import { ChartAnalysis } from "@/lib/chart-analysis";
 
 interface ChartAnalystCardProps {
   analysis: ChartAnalysis;
   originalChart: string; // base64
+  annotatedChart: string | null;
+  annotationStatus: "loading" | "ready" | "failed";
   onPrepareShort: (setup: TradeSetup) => void;
   onPrepareLong: (setup: TradeSetup) => void;
   onClose: () => void;
@@ -168,17 +168,20 @@ function ScenarioCard({
 export function ChartAnalystCard({
   analysis,
   originalChart,
+  annotatedChart,
+  annotationStatus,
   onPrepareShort,
   onPrepareLong,
   onClose,
 }: ChartAnalystCardProps) {
-  const [showOriginal, setShowOriginal] = useState(false);
+  const [viewMode, setViewMode] = useState<"annotated" | "original">("annotated");
   
-  const displayChart = analysis.annotatedChart && !showOriginal 
-    ? analysis.annotatedChart 
+  // Determine what chart to display based on view mode and availability
+  const displayChart = viewMode === "annotated" && annotatedChart 
+    ? annotatedChart 
     : originalChart;
   
-  const hasAnnotatedChart = !!analysis.annotatedChart;
+  const showAnnotatedView = viewMode === "annotated" && annotationStatus === "ready" && annotatedChart;
   
   // Format zone display
   const zoneDisplay = analysis.zone.high > 0 
@@ -267,52 +270,106 @@ export function ChartAnalystCard({
 
         {/* Chart - Hero */}
         <div className="border-b border-[#2d2e2f] bg-[#161717]">
-          {hasAnnotatedChart && (
-            <div className="px-5 pt-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowOriginal(false)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                    !showOriginal 
-                      ? "bg-cyan-500/20 text-cyan-400" 
-                      : "text-[#6b6c6d] hover:text-[#9a9b9c]"
-                  }`}
-                >
-                  <Eye className="w-3 h-3" />
-                  Annotated
-                </button>
-                <button
-                  onClick={() => setShowOriginal(true)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                    showOriginal 
-                      ? "bg-[#242526] text-[#e8e8e8]" 
-                      : "text-[#6b6c6d] hover:text-[#9a9b9c]"
-                  }`}
-                >
-                  <EyeOff className="w-3 h-3" />
-                  Original
-                </button>
-              </div>
-              {!showOriginal && (
-                <div className="text-xs text-cyan-400 flex items-center gap-1">
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                  AI-drawn zone & levels
-                </div>
-              )}
+          {/* Tab switcher - always show */}
+          <div className="px-5 pt-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {/* Annotated tab */}
+              <button
+                onClick={() => setViewMode("annotated")}
+                disabled={annotationStatus === "loading"}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  viewMode === "annotated"
+                    ? annotationStatus === "loading"
+                      ? "bg-cyan-500/10 text-cyan-400/60"
+                      : annotationStatus === "ready"
+                        ? "bg-cyan-500/20 text-cyan-400"
+                        : "bg-[#242526] text-[#6b6c6d]"
+                    : "text-[#6b6c6d] hover:text-[#9a9b9c]"
+                }`}
+              >
+                {annotationStatus === "loading" ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Drawing...
+                  </>
+                ) : annotationStatus === "ready" ? (
+                  <>
+                    <Eye className="w-3 h-3" />
+                    Annotated
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle className="w-3 h-3" />
+                    Annotated
+                  </>
+                )}
+              </button>
+              
+              {/* Original tab */}
+              <button
+                onClick={() => setViewMode("original")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  viewMode === "original" 
+                    ? "bg-[#242526] text-[#e8e8e8]" 
+                    : "text-[#6b6c6d] hover:text-[#9a9b9c]"
+                }`}
+              >
+                <EyeOff className="w-3 h-3" />
+                Original
+              </button>
             </div>
-          )}
+            
+            {/* Status indicator */}
+            {viewMode === "annotated" && (
+              <div className="text-xs flex items-center gap-1">
+                {annotationStatus === "loading" && (
+                  <span className="text-cyan-400/60 flex items-center gap-1">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                    Drawing zone & levels...
+                  </span>
+                )}
+                {annotationStatus === "ready" && (
+                  <span className="text-cyan-400 flex items-center gap-1">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                    AI-drawn zone & levels
+                  </span>
+                )}
+                {annotationStatus === "failed" && (
+                  <span className="text-[#6b6c6d] flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" />
+                    Couldn&apos;t draw on chart
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
           
           <div className="px-5 py-4 relative">
+            {/* Loading overlay when annotation is in progress and viewing annotated tab */}
+            {annotationStatus === "loading" && viewMode === "annotated" && (
+              <div className="absolute inset-5 flex items-center justify-center bg-[#161717]/80 backdrop-blur-sm rounded-lg z-10">
+                <div className="flex flex-col items-center gap-2">
+                  <div className="relative">
+                    <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
+                  </div>
+                  <span className="text-sm text-cyan-400">Drawing TA on chart...</span>
+                  <span className="text-xs text-[#6b6c6d]">Zone: {zoneDisplay}</span>
+                </div>
+              </div>
+            )}
+            
             <img 
               src={`data:image/png;base64,${displayChart}`} 
               alt="Trading chart" 
               className={`w-full rounded-lg border transition-all ${
-                hasAnnotatedChart && !showOriginal 
+                showAnnotatedView
                   ? "border-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.15)]" 
                   : "border-[#2d2e2f]"
               }`}
             />
-            {hasAnnotatedChart && !showOriginal && (
+            
+            {/* Zone badge when showing annotated chart */}
+            {showAnnotatedView && (
               <div className="absolute bottom-6 right-7 bg-[#161717]/90 backdrop-blur-sm px-2 py-1 rounded text-[10px] text-cyan-400 border border-cyan-500/20">
                 ✨ Zone: ${analysis.zone.low.toLocaleString()}–${analysis.zone.high.toLocaleString()}
               </div>
@@ -407,4 +464,3 @@ export function ChartAnalystCard({
     </div>
   );
 }
-

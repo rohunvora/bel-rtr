@@ -12,7 +12,7 @@ import { ThinkingIndicator, getThinkingText } from "./ThinkingIndicator";
 import { PredictionCard, StockCard, ThesisExplorerCard, TargetTradeCard, PortfolioActionCard, ChartAnalystCard, TradeSetupCard, TradeSetup } from "./modals";
 import { AIResponseCard } from "./AIResponseCard";
 import { analyzeChart, fileToBase64 } from "@/lib/gemini";
-import { analyzeChartStructured, ChartAnalysis } from "@/lib/chart-analysis";
+import { analyzeChartStructured, annotateChart, ChartAnalysis } from "@/lib/chart-analysis";
 import { ToastContainer, ToastMessage } from "@/components/Toast";
 import { FlashingPrice } from "@/components/AnimatedPrice";
 import { SparklineInline } from "@/components/Sparkline";
@@ -68,8 +68,8 @@ type ModalState =
   | { type: "portfolio_action"; action: "reduce" | "hedge" | "close_all"; prompt: string }
   | { type: "ai_response"; response: string; image?: string; generatedImage?: string; prompt: string }
   | { type: "ai_loading"; prompt: string }
-  | { type: "chart_analyst"; analysis: ChartAnalysis; originalChart: string; prompt: string }
-  | { type: "trade_setup"; setup: TradeSetup; analysis: ChartAnalysis; originalChart: string; prompt: string };
+  | { type: "chart_analyst"; analysis: ChartAnalysis; originalChart: string; annotatedChart: string | null; annotationStatus: "loading" | "ready" | "failed"; prompt: string }
+  | { type: "trade_setup"; setup: TradeSetup; analysis: ChartAnalysis; originalChart: string; annotatedChart: string | null; prompt: string };
 
 // Rich examples showing variety
 const EXAMPLES = [
@@ -264,31 +264,61 @@ export function RouterPage() {
     }
   }, []);
 
-  // Process image with Gemini - structured chart analysis
+  // Process image with Gemini - two-step: analysis first, then annotation
   const processImageWithAI = useCallback(async (imageBase64: string, prompt: string) => {
     setModalState({ type: "ai_loading", prompt });
     setInput("");
     setPastedImage(null);
 
     try {
+      // Step 1: Get structured analysis (fast)
       const analysis = await analyzeChartStructured(imageBase64, prompt || undefined);
       
-      if (analysis.success) {
-        setModalState({ 
-          type: "chart_analyst", 
-          analysis,
-          originalChart: imageBase64,
-          prompt 
-        });
-        
-        if (analysis.annotatedChart) {
-          addToast("success", "Chart analyzed", "Decision zone identified");
-        } else {
-          addToast("success", "Analysis complete", "Review the setup options");
-        }
-      } else {
+      if (!analysis.success) {
         addToast("error", "Analysis failed", analysis.error);
         setModalState({ type: "none" });
+        return;
+      }
+
+      // Show modal immediately with analysis, annotation loading in background
+      setModalState({ 
+        type: "chart_analyst", 
+        analysis,
+        originalChart: imageBase64,
+        annotatedChart: null,
+        annotationStatus: "loading",
+        prompt 
+      });
+      
+      addToast("success", "Analysis complete", "Generating annotated chart...");
+
+      // Step 2: Generate annotated chart in background
+      try {
+        const annotated = await annotateChart(imageBase64, analysis);
+        
+        // Update modal state with annotated chart (only if still on chart_analyst)
+        setModalState((prev) => {
+          if (prev.type === "chart_analyst") {
+            return {
+              ...prev,
+              annotatedChart: annotated,
+              annotationStatus: annotated ? "ready" : "failed",
+            };
+          }
+          return prev;
+        });
+        
+        if (annotated) {
+          addToast("success", "Chart annotated", "Zone and levels drawn");
+        }
+      } catch (annotationError) {
+        console.error("Annotation failed:", annotationError);
+        setModalState((prev) => {
+          if (prev.type === "chart_analyst") {
+            return { ...prev, annotationStatus: "failed" };
+          }
+          return prev;
+        });
       }
     } catch (error) {
       addToast("error", "Failed to analyze", "Please try again");
@@ -547,6 +577,7 @@ export function RouterPage() {
         setup,
         analysis: modalState.analysis,
         originalChart: modalState.originalChart,
+        annotatedChart: modalState.annotatedChart,
         prompt: modalState.prompt,
       });
     }
@@ -559,6 +590,7 @@ export function RouterPage() {
         setup,
         analysis: modalState.analysis,
         originalChart: modalState.originalChart,
+        annotatedChart: modalState.annotatedChart,
         prompt: modalState.prompt,
       });
     }
@@ -570,6 +602,8 @@ export function RouterPage() {
         type: "chart_analyst",
         analysis: modalState.analysis,
         originalChart: modalState.originalChart,
+        annotatedChart: modalState.annotatedChart,
+        annotationStatus: modalState.annotatedChart ? "ready" : "failed",
         prompt: modalState.prompt,
       });
     }
@@ -846,6 +880,8 @@ export function RouterPage() {
                 <ChartAnalystCard
                   analysis={modalState.analysis}
                   originalChart={modalState.originalChart}
+                  annotatedChart={modalState.annotatedChart}
+                  annotationStatus={modalState.annotationStatus}
                   onPrepareShort={handlePrepareShort}
                   onPrepareLong={handlePrepareLong}
                   onClose={clearModal}

@@ -19,22 +19,15 @@ function getAI() {
 
 // Structured analysis output
 export interface ChartAnalysis {
-  // The decision zone
   zone: {
     high: number;
     low: number;
-    label: string; // e.g. "Decision Zone"
+    label: string;
   };
-  
-  // Current price and status
   currentPrice: number;
   status: "waiting" | "at_zone" | "above_zone" | "below_zone";
   statusText: string;
-  
-  // Why this zone matters - plain language
   reasoning: string;
-  
-  // The two scenarios
   shortScenario: {
     trigger: string;
     entry: string;
@@ -43,7 +36,6 @@ export interface ChartAnalysis {
     target2: number;
     riskReward: string;
   };
-  
   longScenario: {
     trigger: string;
     entry: string;
@@ -52,23 +44,12 @@ export interface ChartAnalysis {
     target2: number;
     riskReward: string;
   };
-  
-  // What to watch for
   watchFor: string[];
-  
-  // What NOT to do
   avoidDoing: string[];
-  
-  // Overall bias
   bias: "neutral" | "lean_bullish" | "lean_bearish";
   biasReason: string;
-  
-  // Raw text response (fallback)
   rawAnalysis?: string;
-  
-  // Generated annotated image
   annotatedChart?: string;
-  
   success: boolean;
   error?: string;
 }
@@ -126,64 +107,16 @@ IMPORTANT:
 - The zone should be a RANGE, not a single price
 - Focus on actionable information only`;
 
-// Dynamic annotation prompt - uses actual analysis values
-function createAnnotationPrompt(analysis: Partial<ChartAnalysis>): string {
-  const zone = analysis.zone || { high: 0, low: 0 };
-  const shortScenario = analysis.shortScenario || { stopLoss: 0, target1: 0, target2: 0 };
-  const longScenario = analysis.longScenario || { stopLoss: 0, target1: 0, target2: 0 };
-  
-  return `Edit this trading chart by drawing technical analysis annotations directly on it. Be precise and professional.
-
-DRAW THESE ELEMENTS ON THE CHART:
-
-1. DECISION ZONE (most important):
-   - Draw a semi-transparent CYAN horizontal band/rectangle between $${zone.low.toLocaleString()} and $${zone.high.toLocaleString()}
-   - This zone should span the full width of the chart
-   - Add a small label "ZONE" or the price range near the zone
-
-2. SHORT SCENARIO (left side of zone):
-   - Draw a small RED downward arrow on the LEFT side
-   - Draw a thin RED dashed horizontal line at $${shortScenario.stopLoss.toLocaleString()} labeled "Stop"
-   - Draw thin GREEN dashed lines at $${shortScenario.target1.toLocaleString()} and $${shortScenario.target2.toLocaleString()} labeled "TP1" and "TP2"
-
-3. LONG SCENARIO (right side of zone):
-   - Draw a small GREEN upward arrow on the RIGHT side  
-   - Draw a thin RED dashed horizontal line at $${longScenario.stopLoss.toLocaleString()} labeled "Stop"
-   - Draw thin GREEN dashed lines at $${longScenario.target1.toLocaleString()} and $${longScenario.target2.toLocaleString()} labeled "TP1" and "TP2"
-
-STYLE REQUIREMENTS:
-- Keep the original chart fully visible
-- Use clean, thin lines that don't obscure price action
-- Make the decision zone band semi-transparent (30-40% opacity)
-- Use professional trading chart colors: cyan for zone, red for stops, green for targets
-- Labels should be small and readable
-- The overall look should be clean and not cluttered
-
-Return the edited chart with all annotations drawn on it.`;
-}
-
+/**
+ * Step 1: Get structured text analysis (fast, reliable)
+ */
 export async function analyzeChartStructured(imageBase64: string, userPrompt?: string): Promise<ChartAnalysis> {
   const client = getAI();
   if (!client) {
-    return { 
-      zone: { high: 0, low: 0, label: "" },
-      currentPrice: 0,
-      status: "waiting",
-      statusText: "Unable to analyze",
-      reasoning: "",
-      shortScenario: { trigger: "", entry: "", stopLoss: 0, target1: 0, target2: 0, riskReward: "" },
-      longScenario: { trigger: "", entry: "", stopLoss: 0, target1: 0, target2: 0, riskReward: "" },
-      watchFor: [],
-      avoidDoing: [],
-      bias: "neutral",
-      biasReason: "",
-      success: false, 
-      error: "API key not configured" 
-    };
+    return createEmptyAnalysis("API key not configured");
   }
 
   try {
-    // First: Get structured analysis
     const analysisResponse = await client.models.generateContent({
       model: "gemini-2.0-flash",
       contents: [
@@ -212,42 +145,67 @@ export async function analyzeChartStructured(imageBase64: string, userPrompt?: s
     }
 
     // Parse JSON response
-    let analysis: Partial<ChartAnalysis> = {};
     try {
-      // Clean up potential markdown code blocks
       const cleanedText = analysisText
         .replace(/```json\n?/g, "")
         .replace(/```\n?/g, "")
         .trim();
-      analysis = JSON.parse(cleanedText);
+      const analysis = JSON.parse(cleanedText);
+      
+      return {
+        zone: analysis.zone || { high: 0, low: 0, label: "" },
+        currentPrice: analysis.currentPrice || 0,
+        status: analysis.status || "waiting",
+        statusText: analysis.statusText || "",
+        reasoning: analysis.reasoning || "",
+        shortScenario: analysis.shortScenario || createEmptyScenario(),
+        longScenario: analysis.longScenario || createEmptyScenario(),
+        watchFor: analysis.watchFor || [],
+        avoidDoing: analysis.avoidDoing || [],
+        bias: analysis.bias || "neutral",
+        biasReason: analysis.biasReason || "",
+        success: true,
+      };
     } catch (parseError) {
       console.error("Failed to parse analysis JSON:", parseError);
-      // Return with raw analysis as fallback
       return {
-        zone: { high: 0, low: 0, label: "Analysis Available" },
-        currentPrice: 0,
-        status: "waiting",
-        statusText: "See detailed analysis below",
-        reasoning: "",
-        shortScenario: { trigger: "", entry: "", stopLoss: 0, target1: 0, target2: 0, riskReward: "" },
-        longScenario: { trigger: "", entry: "", stopLoss: 0, target1: 0, target2: 0, riskReward: "" },
-        watchFor: [],
-        avoidDoing: [],
-        bias: "neutral",
-        biasReason: "",
+        ...createEmptyAnalysis(),
         rawAnalysis: analysisText,
         success: true,
       };
     }
+  } catch (error: any) {
+    console.error("Chart analysis error:", error);
+    return createEmptyAnalysis(error.message || "Failed to analyze chart");
+  }
+}
 
-    // Second: Generate annotated chart with actual analysis values
-    let annotatedChart: string | undefined;
+/**
+ * Step 2: Generate annotated chart (separate query, can be slower)
+ * This is called AFTER we have the analysis, with exact values to draw
+ */
+export async function annotateChart(
+  imageBase64: string, 
+  analysis: ChartAnalysis
+): Promise<string | null> {
+  const client = getAI();
+  if (!client) return null;
+
+  // Create a very specific, focused prompt with exact values
+  const annotationPrompt = createAnnotationPrompt(analysis);
+
+  // Try multiple models in order of preference
+  const models = [
+    "gemini-2.0-flash-preview-image-generation",
+    "gemini-2.5-flash-preview-04-17",
+  ];
+
+  for (const model of models) {
     try {
-      // Create specific annotation prompt using the parsed analysis
-      const annotationPrompt = createAnnotationPrompt(analysis);
+      console.log(`Attempting chart annotation with ${model}...`);
       
-      const annotateResponse = await client.models.generateContent({
-        model: "gemini-2.0-flash-preview-image-generation",
+      const response = await client.models.generateContent({
+        model,
         contents: [
           {
             role: "user",
@@ -267,84 +225,81 @@ export async function analyzeChartStructured(imageBase64: string, userPrompt?: s
         },
       });
 
-      const annotateParts = annotateResponse.candidates?.[0]?.content?.parts || [];
-      for (const part of annotateParts) {
-        if (part.inlineData?.data) {
-          annotatedChart = part.inlineData.data;
-          console.log("Successfully generated annotated chart");
-          break;
-        }
-      }
+      const parts = response.candidates?.[0]?.content?.parts || [];
       
-      // If first model didn't work, try the latest model
-      if (!annotatedChart) {
-        console.log("Trying gemini-2.5-flash-preview-04-17 for image generation...");
-        const fallbackResponse = await client.models.generateContent({
-          model: "gemini-2.5-flash-preview-04-17",
-          contents: [
-            {
-              role: "user",
-              parts: [
-                {
-                  inlineData: {
-                    mimeType: "image/png",
-                    data: imageBase64,
-                  },
-                },
-                { text: annotationPrompt },
-              ],
-            },
-          ],
-          config: {
-            responseModalities: ["TEXT", "IMAGE"],
-          },
-        });
-        
-        const fallbackParts = fallbackResponse.candidates?.[0]?.content?.parts || [];
-        for (const part of fallbackParts) {
-          if (part.inlineData?.data) {
-            annotatedChart = part.inlineData.data;
-            console.log("Successfully generated annotated chart with fallback model");
-            break;
-          }
+      for (const part of parts) {
+        if (part.inlineData?.data) {
+          console.log(`Successfully annotated chart with ${model}`);
+          return part.inlineData.data;
         }
       }
-    } catch (annotateError: any) {
-      console.log("Could not generate annotated chart:", annotateError.message);
+    } catch (error: any) {
+      console.log(`Model ${model} failed:`, error.message);
+      continue;
     }
-
-    return {
-      zone: analysis.zone || { high: 0, low: 0, label: "" },
-      currentPrice: analysis.currentPrice || 0,
-      status: analysis.status || "waiting",
-      statusText: analysis.statusText || "",
-      reasoning: analysis.reasoning || "",
-      shortScenario: analysis.shortScenario || { trigger: "", entry: "", stopLoss: 0, target1: 0, target2: 0, riskReward: "" },
-      longScenario: analysis.longScenario || { trigger: "", entry: "", stopLoss: 0, target1: 0, target2: 0, riskReward: "" },
-      watchFor: analysis.watchFor || [],
-      avoidDoing: analysis.avoidDoing || [],
-      bias: analysis.bias || "neutral",
-      biasReason: analysis.biasReason || "",
-      annotatedChart,
-      success: true,
-    };
-  } catch (error: any) {
-    console.error("Chart analysis error:", error);
-    return {
-      zone: { high: 0, low: 0, label: "" },
-      currentPrice: 0,
-      status: "waiting",
-      statusText: "Analysis failed",
-      reasoning: "",
-      shortScenario: { trigger: "", entry: "", stopLoss: 0, target1: 0, target2: 0, riskReward: "" },
-      longScenario: { trigger: "", entry: "", stopLoss: 0, target1: 0, target2: 0, riskReward: "" },
-      watchFor: [],
-      avoidDoing: [],
-      bias: "neutral",
-      biasReason: "",
-      success: false,
-      error: error.message || "Failed to analyze chart",
-    };
   }
+
+  console.log("All annotation models failed");
+  return null;
 }
 
+/**
+ * Create a focused, specific annotation prompt
+ */
+function createAnnotationPrompt(analysis: ChartAnalysis): string {
+  const { zone, shortScenario, longScenario } = analysis;
+  
+  return `You are a chart annotation tool. Edit this trading chart image by drawing EXACTLY these elements:
+
+REQUIRED ANNOTATIONS:
+
+1. DECISION ZONE - Draw a semi-transparent horizontal band:
+   - Top edge at $${zone.high.toLocaleString()}
+   - Bottom edge at $${zone.low.toLocaleString()}
+   - Use CYAN color with ~30% opacity
+   - Span the full width of the chart
+   - Add small label "${zone.label || 'Zone'}" 
+
+2. SHORT SETUP (draw on LEFT side of chart):
+   - Small RED arrow pointing DOWN
+   - Thin RED horizontal dashed line at $${shortScenario.stopLoss.toLocaleString()} (label: "SL")
+   - Thin GREEN horizontal dashed line at $${shortScenario.target1.toLocaleString()} (label: "TP1")
+   - Thin GREEN horizontal dashed line at $${shortScenario.target2.toLocaleString()} (label: "TP2")
+
+3. LONG SETUP (draw on RIGHT side of chart):
+   - Small GREEN arrow pointing UP
+   - Thin RED horizontal dashed line at $${longScenario.stopLoss.toLocaleString()} (label: "SL")
+   - Thin GREEN horizontal dashed line at $${longScenario.target1.toLocaleString()} (label: "TP1")
+   - Thin GREEN horizontal dashed line at $${longScenario.target2.toLocaleString()} (label: "TP2")
+
+STYLE RULES:
+- Keep the original chart FULLY visible underneath
+- Use thin, clean lines (1-2px)
+- Labels should be small (8-10pt font)
+- Don't clutter - these are the ONLY annotations needed
+- Professional trading chart aesthetic
+
+Return the annotated chart image.`;
+}
+
+function createEmptyScenario() {
+  return { trigger: "", entry: "", stopLoss: 0, target1: 0, target2: 0, riskReward: "" };
+}
+
+function createEmptyAnalysis(error?: string): ChartAnalysis {
+  return {
+    zone: { high: 0, low: 0, label: "" },
+    currentPrice: 0,
+    status: "waiting",
+    statusText: error || "Unable to analyze",
+    reasoning: "",
+    shortScenario: createEmptyScenario(),
+    longScenario: createEmptyScenario(),
+    watchFor: [],
+    avoidDoing: [],
+    bias: "neutral",
+    biasReason: "",
+    success: !error,
+    error,
+  };
+}
