@@ -268,38 +268,55 @@ export function ChartAnalystCard({
         {/* Chart - Hero */}
         <div className="border-b border-[#2d2e2f] bg-[#161717]">
           {hasAnnotatedChart && (
-            <div className="px-5 pt-3 flex items-center gap-2">
-              <button
-                onClick={() => setShowOriginal(false)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  !showOriginal 
-                    ? "bg-cyan-500/20 text-cyan-400" 
-                    : "text-[#6b6c6d] hover:text-[#9a9b9c]"
-                }`}
-              >
-                <Eye className="w-3 h-3" />
-                Annotated
-              </button>
-              <button
-                onClick={() => setShowOriginal(true)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  showOriginal 
-                    ? "bg-[#242526] text-[#e8e8e8]" 
-                    : "text-[#6b6c6d] hover:text-[#9a9b9c]"
-                }`}
-              >
-                <EyeOff className="w-3 h-3" />
-                Original
-              </button>
+            <div className="px-5 pt-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowOriginal(false)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    !showOriginal 
+                      ? "bg-cyan-500/20 text-cyan-400" 
+                      : "text-[#6b6c6d] hover:text-[#9a9b9c]"
+                  }`}
+                >
+                  <Eye className="w-3 h-3" />
+                  Annotated
+                </button>
+                <button
+                  onClick={() => setShowOriginal(true)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    showOriginal 
+                      ? "bg-[#242526] text-[#e8e8e8]" 
+                      : "text-[#6b6c6d] hover:text-[#9a9b9c]"
+                  }`}
+                >
+                  <EyeOff className="w-3 h-3" />
+                  Original
+                </button>
+              </div>
+              {!showOriginal && (
+                <div className="text-xs text-cyan-400 flex items-center gap-1">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                  AI-drawn zone & levels
+                </div>
+              )}
             </div>
           )}
           
-          <div className="px-5 py-4">
+          <div className="px-5 py-4 relative">
             <img 
               src={`data:image/png;base64,${displayChart}`} 
               alt="Trading chart" 
-              className="w-full rounded-lg border border-[#2d2e2f]"
+              className={`w-full rounded-lg border transition-all ${
+                hasAnnotatedChart && !showOriginal 
+                  ? "border-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.15)]" 
+                  : "border-[#2d2e2f]"
+              }`}
             />
+            {hasAnnotatedChart && !showOriginal && (
+              <div className="absolute bottom-6 right-7 bg-[#161717]/90 backdrop-blur-sm px-2 py-1 rounded text-[10px] text-cyan-400 border border-cyan-500/20">
+                ✨ Zone: ${analysis.zone.low.toLocaleString()}–${analysis.zone.high.toLocaleString()}
+              </div>
+            )}
           </div>
         </div>
 

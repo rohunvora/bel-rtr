@@ -126,16 +126,41 @@ IMPORTANT:
 - The zone should be a RANGE, not a single price
 - Focus on actionable information only`;
 
-const ANNOTATE_PROMPT = `You are a technical analyst. Draw on this trading chart:
+// Dynamic annotation prompt - uses actual analysis values
+function createAnnotationPrompt(analysis: Partial<ChartAnalysis>): string {
+  const zone = analysis.zone || { high: 0, low: 0 };
+  const shortScenario = analysis.shortScenario || { stopLoss: 0, target1: 0, target2: 0 };
+  const longScenario = analysis.longScenario || { stopLoss: 0, target1: 0, target2: 0 };
+  
+  return `Edit this trading chart by drawing technical analysis annotations directly on it. Be precise and professional.
 
-1. Draw a horizontal band/zone highlighting the KEY decision zone (use a semi-transparent cyan or yellow color)
-2. Label the zone with the price range
-3. Draw a small arrow DOWN (red) on one side showing "SHORT if rejected"
-4. Draw a small arrow UP (green) on the other side showing "LONG if reclaimed"
-5. Mark the current price if visible
-6. Keep annotations clean and professional - don't clutter
+DRAW THESE ELEMENTS ON THE CHART:
 
-Return the annotated chart image.`;
+1. DECISION ZONE (most important):
+   - Draw a semi-transparent CYAN horizontal band/rectangle between $${zone.low.toLocaleString()} and $${zone.high.toLocaleString()}
+   - This zone should span the full width of the chart
+   - Add a small label "ZONE" or the price range near the zone
+
+2. SHORT SCENARIO (left side of zone):
+   - Draw a small RED downward arrow on the LEFT side
+   - Draw a thin RED dashed horizontal line at $${shortScenario.stopLoss.toLocaleString()} labeled "Stop"
+   - Draw thin GREEN dashed lines at $${shortScenario.target1.toLocaleString()} and $${shortScenario.target2.toLocaleString()} labeled "TP1" and "TP2"
+
+3. LONG SCENARIO (right side of zone):
+   - Draw a small GREEN upward arrow on the RIGHT side  
+   - Draw a thin RED dashed horizontal line at $${longScenario.stopLoss.toLocaleString()} labeled "Stop"
+   - Draw thin GREEN dashed lines at $${longScenario.target1.toLocaleString()} and $${longScenario.target2.toLocaleString()} labeled "TP1" and "TP2"
+
+STYLE REQUIREMENTS:
+- Keep the original chart fully visible
+- Use clean, thin lines that don't obscure price action
+- Make the decision zone band semi-transparent (30-40% opacity)
+- Use professional trading chart colors: cyan for zone, red for stops, green for targets
+- Labels should be small and readable
+- The overall look should be clean and not cluttered
+
+Return the edited chart with all annotations drawn on it.`;
+}
 
 export async function analyzeChartStructured(imageBase64: string, userPrompt?: string): Promise<ChartAnalysis> {
   const client = getAI();
@@ -215,9 +240,12 @@ export async function analyzeChartStructured(imageBase64: string, userPrompt?: s
       };
     }
 
-    // Second: Try to get annotated chart
+    // Second: Generate annotated chart with actual analysis values
     let annotatedChart: string | undefined;
     try {
+      // Create specific annotation prompt using the parsed analysis
+      const annotationPrompt = createAnnotationPrompt(analysis);
+      
       const annotateResponse = await client.models.generateContent({
         model: "gemini-2.0-flash-preview-image-generation",
         contents: [
@@ -230,12 +258,12 @@ export async function analyzeChartStructured(imageBase64: string, userPrompt?: s
                   data: imageBase64,
                 },
               },
-              { text: ANNOTATE_PROMPT },
+              { text: annotationPrompt },
             ],
           },
         ],
         config: {
-          responseModalities: ["IMAGE"],
+          responseModalities: ["TEXT", "IMAGE"],
         },
       });
 
@@ -243,11 +271,46 @@ export async function analyzeChartStructured(imageBase64: string, userPrompt?: s
       for (const part of annotateParts) {
         if (part.inlineData?.data) {
           annotatedChart = part.inlineData.data;
+          console.log("Successfully generated annotated chart");
           break;
         }
       }
-    } catch (annotateError) {
-      console.log("Could not generate annotated chart, using original");
+      
+      // If first model didn't work, try the latest model
+      if (!annotatedChart) {
+        console.log("Trying gemini-2.5-flash-preview-04-17 for image generation...");
+        const fallbackResponse = await client.models.generateContent({
+          model: "gemini-2.5-flash-preview-04-17",
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: "image/png",
+                    data: imageBase64,
+                  },
+                },
+                { text: annotationPrompt },
+              ],
+            },
+          ],
+          config: {
+            responseModalities: ["TEXT", "IMAGE"],
+          },
+        });
+        
+        const fallbackParts = fallbackResponse.candidates?.[0]?.content?.parts || [];
+        for (const part of fallbackParts) {
+          if (part.inlineData?.data) {
+            annotatedChart = part.inlineData.data;
+            console.log("Successfully generated annotated chart with fallback model");
+            break;
+          }
+        }
+      }
+    } catch (annotateError: any) {
+      console.log("Could not generate annotated chart:", annotateError.message);
     }
 
     return {
