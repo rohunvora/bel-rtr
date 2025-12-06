@@ -736,6 +736,32 @@ export function RouterPage() {
                     onCancel={clearModal}
                   />
                 )}
+
+                {/* Follow-up input */}
+                <div className="mt-6 pt-4 border-t border-[#2d2e2f]">
+                  <div className="relative">
+                    <div className="bg-[#242526] border border-[#2d2e2f] rounded-xl overflow-hidden focus-within:border-[#3d3e3f] transition-colors">
+                      <textarea
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Adjust this... Make it smaller... Change the stop..."
+                        rows={1}
+                        className="w-full bg-transparent text-[#e8e8e8] placeholder-[#4a4b4c] px-4 py-3 pr-12 resize-none focus:outline-none text-sm"
+                        style={{ minHeight: "44px" }}
+                      />
+                      <button
+                        onClick={handleSubmit}
+                        disabled={!input.trim()}
+                        className={`absolute right-2 bottom-2 p-2 rounded-lg transition-all btn-press ${
+                          input.trim() ? "bg-[#20b2aa] hover:bg-[#2cc5bc] text-white" : "bg-[#3d3e3f] text-[#6b6c6d]"
+                        }`}
+                      >
+                        <ArrowUp className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>
