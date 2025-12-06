@@ -35,9 +35,9 @@ export async function analyzeChart(imageBase64: string, prompt?: string): Promis
     const analysisPrompt = prompt || 
       "Analyze this trading chart and draw technical analysis on it. Add support levels, resistance levels, and trendlines. Return the annotated chart.";
 
-    // Use gemini-2.5-flash-image for image editing/generation
+    // Use Gemini 3 Pro Image Preview (Nano Banana Pro) - latest and greatest
     const response = await client.models.generateContent({
-      model: "gemini-2.5-flash-image",
+      model: "gemini-3-pro-image-preview",
       contents: [
         {
           role: "user",
