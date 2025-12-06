@@ -136,30 +136,63 @@ Be specific with price levels.`;
   }
 }
 
-// General chat with optional image
-export async function chat(message: string, imageBase64?: string): Promise<GeminiResponse> {
+// Message type for conversation
+export interface ChatMessage {
+  role: "user" | "model";
+  content: string;
+  image?: string; // base64
+}
+
+// Conversational chat with history
+export async function chatWithHistory(
+  messages: ChatMessage[],
+  systemContext?: string
+): Promise<GeminiResponse> {
   const client = getAI();
   if (!client) {
     return { text: "", success: false, error: "API key not configured" };
   }
 
   try {
-    const parts: any[] = [];
+    // Build contents array with conversation history
+    const contents: any[] = [];
     
-    if (imageBase64) {
-      parts.push({
-        inlineData: {
-          mimeType: "image/png",
-          data: imageBase64,
-        },
+    // Add system context as first user message if provided
+    if (systemContext) {
+      contents.push({
+        role: "user",
+        parts: [{ text: `Context: ${systemContext}\n\nPlease keep this context in mind for our conversation.` }],
+      });
+      contents.push({
+        role: "model",
+        parts: [{ text: "Understood. I have the context and will reference it in our conversation." }],
       });
     }
     
-    parts.push({ text: message });
+    // Add conversation history
+    for (const msg of messages) {
+      const parts: any[] = [];
+      
+      if (msg.image) {
+        parts.push({
+          inlineData: {
+            mimeType: "image/png",
+            data: msg.image,
+          },
+        });
+      }
+      
+      parts.push({ text: msg.content });
+      
+      contents.push({
+        role: msg.role,
+        parts,
+      });
+    }
 
     const response = await client.models.generateContent({
       model: "gemini-2.0-flash",
-      contents: [{ role: "user", parts }],
+      contents,
     });
 
     const responseParts = response.candidates?.[0]?.content?.parts || [];
@@ -180,6 +213,11 @@ export async function chat(message: string, imageBase64?: string): Promise<Gemin
       error: error.message || "Failed to get response" 
     };
   }
+}
+
+// General chat with optional image (legacy)
+export async function chat(message: string, imageBase64?: string): Promise<GeminiResponse> {
+  return chatWithHistory([{ role: "user", content: message, image: imageBase64 }]);
 }
 
 // Convert file to base64

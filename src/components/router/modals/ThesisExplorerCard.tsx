@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Compass, TrendingUp, TrendingDown, Sparkles, ChevronRight, Lightbulb } from "lucide-react";
+import { Check, Compass, TrendingUp, TrendingDown, Sparkles, ChevronRight, Lightbulb, X } from "lucide-react";
 import { useLivePrices } from "@/lib/use-live-prices";
 import { FlashingPrice } from "@/components/AnimatedPrice";
 
@@ -49,14 +49,23 @@ export function ThesisExplorerCard({ thesis, sentiment, instruments, onSelect, o
       <div className="bg-[#1e1f20] border border-[#2d2e2f] rounded-2xl overflow-hidden">
         {/* Header - Perplexity-style */}
         <div className="px-5 py-4 border-b border-[#2d2e2f]">
-          <div className="flex items-center gap-3 mb-3">
-            <div className={`p-2.5 rounded-xl ${sentiment === "bullish" ? "bg-[#20b2aa]/10" : "bg-red-500/10"}`}>
-              <Compass className={`w-5 h-5 ${sentiment === "bullish" ? "text-[#20b2aa]" : "text-red-400"}`} />
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <div className={`p-2.5 rounded-xl ${sentiment === "bullish" ? "bg-[#20b2aa]/10" : "bg-red-500/10"}`}>
+                <Compass className={`w-5 h-5 ${sentiment === "bullish" ? "text-[#20b2aa]" : "text-red-400"}`} />
+              </div>
+              <div>
+                <div className="text-xs text-[#6b6c6d] uppercase tracking-wider">Your thesis</div>
+                <div className="font-semibold text-[#e8e8e8] text-lg">&ldquo;{thesis}&rdquo;</div>
+              </div>
             </div>
-            <div>
-              <div className="text-xs text-[#6b6c6d] uppercase tracking-wider">Your thesis</div>
-              <div className="font-semibold text-[#e8e8e8] text-lg">&ldquo;{thesis}&rdquo;</div>
-            </div>
+            <button
+              onClick={onCancel}
+              className="p-2 hover:bg-[#242526] rounded-lg transition-colors"
+              title="Close"
+            >
+              <X className="w-4 h-4 text-[#6b6c6d] hover:text-[#e8e8e8]" />
+            </button>
           </div>
           
           {/* AI Insight - the Perplexity moment */}

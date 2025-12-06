@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Check, Target, TrendingUp, TrendingDown, Calendar, ArrowRight, Info } from "lucide-react";
+import { Check, Target, TrendingUp, TrendingDown, Calendar, ArrowRight, Info, X } from "lucide-react";
 import { TradePlan, formatCurrency, formatNumber, calculateSize } from "@/lib/router-types";
 import { FlashingPrice } from "@/components/AnimatedPrice";
 import { MiniChart } from "@/components/MiniChart";
@@ -85,7 +85,16 @@ export function TargetTradeCard({ prompt, symbol, targetPrice, deadline, onConfi
                 <div className="font-semibold text-[#e8e8e8] text-lg">{symbol}</div>
               </div>
             </div>
-            <MiniChart symbol={symbol} width={100} height={40} />
+            <div className="flex items-start gap-2">
+              <MiniChart symbol={symbol} width={100} height={40} />
+              <button
+                onClick={onCancel}
+                className="p-2 hover:bg-[#242526] rounded-lg transition-colors"
+                title="Close"
+              >
+                <X className="w-4 h-4 text-[#6b6c6d] hover:text-[#e8e8e8]" />
+              </button>
+            </div>
           </div>
 
           {/* Price target visualization */}

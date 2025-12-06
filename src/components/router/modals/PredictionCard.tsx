@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, ExternalLink, TrendingUp, TrendingDown, Vote, DollarSign } from "lucide-react";
+import { Check, ExternalLink, TrendingUp, TrendingDown, Vote, DollarSign, X } from "lucide-react";
 import { PredictionPlan, formatCurrency } from "@/lib/router-types";
 
 interface PredictionCardProps {
@@ -51,14 +51,23 @@ export function PredictionCard({ prediction, market, platform, currentOdds, onCo
       <div className="bg-[#1e1f20] border border-[#2d2e2f] rounded-2xl overflow-hidden">
         {/* Header */}
         <div className="px-5 py-4 border-b border-[#2d2e2f]">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="p-2.5 rounded-xl bg-purple-500/10">
-              <Vote className="w-5 h-5 text-purple-400" />
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-purple-500/10">
+                <Vote className="w-5 h-5 text-purple-400" />
+              </div>
+              <div>
+                <div className="text-xs text-[#6b6c6d] uppercase tracking-wider">Prediction Market</div>
+                <div className="font-semibold text-[#e8e8e8]">{market}</div>
+              </div>
             </div>
-            <div>
-              <div className="text-xs text-[#6b6c6d] uppercase tracking-wider">Prediction Market</div>
-              <div className="font-semibold text-[#e8e8e8]">{market}</div>
-            </div>
+            <button
+              onClick={onCancel}
+              className="p-2 hover:bg-[#242526] rounded-lg transition-colors"
+              title="Close"
+            >
+              <X className="w-4 h-4 text-[#6b6c6d] hover:text-[#e8e8e8]" />
+            </button>
           </div>
           
           <div className="flex items-center gap-2 text-sm text-[#6b6c6d]">

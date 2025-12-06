@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, ExternalLink, TrendingUp, TrendingDown, Building2, Sparkles } from "lucide-react";
+import { Check, ExternalLink, TrendingUp, TrendingDown, Building2, Sparkles, X } from "lucide-react";
 import { StockPlan, formatCurrency } from "@/lib/router-types";
 
 interface StockCardProps {
@@ -60,9 +60,18 @@ export function StockCard({ prompt, ticker, companyName, currentPrice, thesis, o
                 </div>
               </div>
             </div>
-            <div className="text-right">
-              <div className="text-xs text-[#6b6c6d]">Current</div>
-              <div className="font-mono text-lg text-[#e8e8e8]">${currentPrice.toFixed(2)}</div>
+            <div className="flex items-start gap-3">
+              <div className="text-right">
+                <div className="text-xs text-[#6b6c6d]">Current</div>
+                <div className="font-mono text-lg text-[#e8e8e8]">${currentPrice.toFixed(2)}</div>
+              </div>
+              <button
+                onClick={onCancel}
+                className="p-2 hover:bg-[#242526] rounded-lg transition-colors"
+                title="Close"
+              >
+                <X className="w-4 h-4 text-[#6b6c6d] hover:text-[#e8e8e8]" />
+              </button>
             </div>
           </div>
 

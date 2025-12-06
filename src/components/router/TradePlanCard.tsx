@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { ChevronDown, ChevronUp, TrendingUp, TrendingDown, Clock, Check, AlertTriangle, Info } from "lucide-react";
+import { ChevronDown, ChevronUp, TrendingUp, TrendingDown, Clock, Check, AlertTriangle, Info, X, ArrowLeft } from "lucide-react";
 import { TradePlan, TwapPlan, formatCurrency, formatNumber, calculateSize } from "@/lib/router-types";
 import { FlashingPrice } from "@/components/AnimatedPrice";
 import { MiniChart } from "@/components/MiniChart";
@@ -24,9 +24,10 @@ interface TradePlanCardProps {
   prompt: string;
   onConfirm: (plan: TradePlan) => void;
   onRefine: (message: string) => void;
+  onCancel?: () => void;
 }
 
-export function TradePlanCard({ plan: initialPlan, prompt, onConfirm, onRefine }: TradePlanCardProps) {
+export function TradePlanCard({ plan: initialPlan, prompt, onConfirm, onRefine, onCancel }: TradePlanCardProps) {
   const { prices } = useLivePrices();
   const [showEdit, setShowEdit] = useState(false);
   const [risk, setRisk] = useState(initialPlan.maxRisk);
@@ -130,8 +131,19 @@ export function TradePlanCard({ plan: initialPlan, prompt, onConfirm, onRefine }
               </div>
             </div>
             
-            {/* Mini chart */}
-            <MiniChart symbol={symbol} width={120} height={48} />
+            {/* Mini chart + close button */}
+            <div className="flex items-start gap-2">
+              <MiniChart symbol={symbol} width={120} height={48} />
+              {onCancel && (
+                <button
+                  onClick={onCancel}
+                  className="p-2 hover:bg-[#242526] rounded-lg transition-colors"
+                  title="Close"
+                >
+                  <X className="w-4 h-4 text-[#6b6c6d] hover:text-[#e8e8e8]" />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Live price ticker */}
@@ -305,9 +317,10 @@ interface TwapPlanCardProps {
   prompt: string;
   onConfirm: (plan: TwapPlan) => void;
   onRefine: (message: string) => void;
+  onCancel?: () => void;
 }
 
-export function TwapPlanCard({ plan: initialPlan, prompt, onConfirm, onRefine }: TwapPlanCardProps) {
+export function TwapPlanCard({ plan: initialPlan, prompt, onConfirm, onRefine, onCancel }: TwapPlanCardProps) {
   const { prices } = useLivePrices();
   const [showEdit, setShowEdit] = useState(false);
   const [duration, setDuration] = useState(initialPlan.duration);
@@ -376,7 +389,19 @@ export function TwapPlanCard({ plan: initialPlan, prompt, onConfirm, onRefine }:
               </div>
             </div>
             
-            <MiniChart symbol={symbol} width={120} height={48} />
+            {/* Mini chart + close button */}
+            <div className="flex items-start gap-2">
+              <MiniChart symbol={symbol} width={120} height={48} />
+              {onCancel && (
+                <button
+                  onClick={onCancel}
+                  className="p-2 hover:bg-[#242526] rounded-lg transition-colors"
+                  title="Close"
+                >
+                  <X className="w-4 h-4 text-[#6b6c6d] hover:text-[#e8e8e8]" />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Live price */}

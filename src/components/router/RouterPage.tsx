@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { ArrowUp, Coins, Vote, Building2, Wifi, WifiOff, Target, Layers, Sparkles, Clock, X, Image as ImageIcon, Loader2, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { ArrowUp, Coins, Vote, Building2, Wifi, WifiOff, Target, Layers, Sparkles, Clock, X, Image as ImageIcon, Loader2, PanelRightClose, PanelRightOpen, Plus, Home } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
 import { SettingsView } from "./SettingsView";
 import { HelpView } from "./HelpView";
@@ -212,6 +212,23 @@ export function RouterPage() {
       resultsRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }, [modalState]);
+
+  const clearModal = useCallback(() => {
+    setModalState({ type: "none" });
+    setInput("");
+  }, []);
+
+  // ESC key to dismiss results/modals
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && modalState.type !== "none" && modalState.type !== "thinking" && modalState.type !== "ai_loading") {
+        clearModal();
+      }
+    };
+    
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [modalState.type, clearModal]);
 
   const addToast = useCallback((type: "success" | "error", title: string, message?: string) => {
     const id = `toast-${Date.now()}`;
@@ -485,11 +502,6 @@ export function RouterPage() {
       handleSubmit();
     }
   };
-
-  const clearModal = useCallback(() => {
-    setModalState({ type: "none" });
-    setInput("");
-  }, []);
 
   // Confirm handlers
   const handleConfirmCrypto = useCallback((plan: TradePlan) => {
@@ -841,6 +853,7 @@ export function RouterPage() {
                   originalChart={modalState.originalChart}
                   annotatedChart={modalState.annotatedChart}
                   annotationStatus={modalState.annotationStatus}
+                  userPrompt={modalState.prompt}
                   onClose={clearModal}
                 />
               </div>
@@ -855,6 +868,7 @@ export function RouterPage() {
                     prompt={modalState.prompt}
                     onConfirm={handleConfirmCrypto}
                     onRefine={clearModal}
+                    onCancel={clearModal}
                   />
                 )}
                 {modalState.type === "twap" && (
@@ -863,6 +877,7 @@ export function RouterPage() {
                     prompt={modalState.prompt}
                     onConfirm={handleConfirmTwap}
                     onRefine={clearModal}
+                    onCancel={clearModal}
                   />
                 )}
                 {modalState.type === "prediction" && (
@@ -915,15 +930,25 @@ export function RouterPage() {
                   />
                 )}
 
-                {/* Follow-up input */}
+                {/* Follow-up input and Start Over */}
                 <div className="mt-6 pt-4 border-t border-[#2d2e2f]">
+                  {/* Start over button - clear and prominent */}
+                  <button
+                    onClick={clearModal}
+                    className="w-full mb-4 flex items-center justify-center gap-2 px-4 py-3 text-[#9a9b9c] hover:text-[#e8e8e8] bg-[#1e1f20] hover:bg-[#242526] border border-[#2d2e2f] rounded-xl transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Start New Trade
+                  </button>
+                  
                   <div className="relative">
+                    <div className="text-xs text-[#6b6c6d] mb-2">Or adjust this one:</div>
                     <div className="bg-[#242526] border border-[#2d2e2f] rounded-xl overflow-hidden focus-within:border-[#3d3e3f] transition-colors">
                       <textarea
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        placeholder="Adjust this... Make it smaller... Change the stop..."
+                        placeholder="Make it smaller... Change the stop..."
                         rows={1}
                         className="w-full bg-transparent text-[#e8e8e8] placeholder-[#4a4b4c] px-4 py-3 pr-12 resize-none focus:outline-none text-sm"
                         style={{ minHeight: "44px" }}
@@ -1008,6 +1033,18 @@ export function RouterPage() {
           <div className="text-xs text-[#6b6c6d]">Demo • No real trades</div>
         </div>
       </div>
+
+      {/* Floating mobile back button - shows when viewing results */}
+      {activePage === "trade" && modalState.type !== "none" && modalState.type !== "thinking" && modalState.type !== "ai_loading" && (
+        <button
+          onClick={clearModal}
+          className="lg:hidden fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 bg-[#20b2aa] hover:bg-[#2cc5bc] text-white rounded-full shadow-lg transition-all btn-press"
+          title="Start new trade"
+        >
+          <Plus className="w-5 h-5" />
+          <span className="font-medium">New</span>
+        </button>
+      )}
 
       {/* Lock Modal */}
       <LockRiskModal

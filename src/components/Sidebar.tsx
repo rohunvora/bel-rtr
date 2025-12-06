@@ -55,13 +55,18 @@ export function Sidebar({ isCollapsed = false, onToggle, activePage = "trade", o
         ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         ${isCollapsed ? 'lg:-translate-x-full lg:w-0 lg:border-r-0' : ''}
       `}>
-        {/* Logo */}
+        {/* Logo / Home button */}
         <div className="p-3 flex justify-center border-b border-[#2d2e2f]">
           <button 
             onClick={() => handleNavigate("trade")}
-            className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#20b2aa] to-[#1a9089] flex items-center justify-center hover:opacity-90 transition-opacity"
+            className="relative group w-10 h-10 rounded-xl bg-gradient-to-br from-[#20b2aa] to-[#1a9089] flex items-center justify-center hover:scale-105 hover:shadow-lg hover:shadow-[#20b2aa]/20 transition-all"
+            title="Home"
           >
             <Zap className="w-5 h-5 text-white" />
+            {/* Tooltip */}
+            <span className="absolute left-full ml-2 px-2 py-1 bg-[#242526] text-[#e8e8e8] text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 hidden lg:block">
+              Home
+            </span>
           </button>
         </div>
 
@@ -132,8 +137,7 @@ function NavItem({
     <button
       disabled={disabled}
       onClick={onClick}
-      title={label}
-      className={`w-full flex items-center justify-center p-2.5 rounded-lg transition-colors btn-press ${
+      className={`relative group w-full flex items-center justify-center p-2.5 rounded-lg transition-colors btn-press ${
         active 
           ? "bg-[#242526] text-[#e8e8e8]" 
           : disabled
@@ -142,6 +146,10 @@ function NavItem({
       }`}
     >
       <Icon className="w-5 h-5" />
+      {/* Tooltip */}
+      <span className="absolute left-full ml-2 px-2 py-1 bg-[#242526] text-[#e8e8e8] text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 hidden lg:block">
+        {label}
+      </span>
     </button>
   );
 }
