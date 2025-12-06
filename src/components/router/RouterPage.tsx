@@ -1,17 +1,14 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { Zap } from "lucide-react";
-import { RouterInput } from "./RouterInput";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { Zap, ArrowUp, Sparkles } from "lucide-react";
+import { TradePlanCard, TwapPlanCard } from "./TradePlanCard";
 import { PlannedTradesPanel } from "./PlannedTradesPanel";
-import { NewTradeModal } from "./NewTradeModal";
-import { TwapModal } from "./TwapModal";
 import { LockRiskModal } from "./LockRiskModal";
 import { ToastContainer, ToastMessage } from "@/components/Toast";
 import {
   TradePlan,
   TwapPlan,
-  ModalType,
   parseRouterIntent,
   BTC_SHORT_TEMPLATE,
   ZEC_LONG_TEMPLATE,
@@ -19,14 +16,36 @@ import {
   ZEC_TWAP_TEMPLATE,
 } from "@/lib/router-types";
 
+type PlanResult = 
+  | { type: "trade"; plan: Omit<TradePlan, "id" | "createdAt" | "status"> }
+  | { type: "twap"; plan: Omit<TwapPlan, "id" | "createdAt" | "status"> }
+  | null;
+
 export function RouterPage() {
+  const [input, setInput] = useState("");
+  const [currentPlan, setCurrentPlan] = useState<PlanResult>(null);
   const [trades, setTrades] = useState<TradePlan[]>([]);
   const [twaps, setTwaps] = useState<TwapPlan[]>([]);
-  const [activeModal, setActiveModal] = useState<ModalType>(null);
-  const [currentTradePlan, setCurrentTradePlan] = useState<Omit<TradePlan, "id" | "createdAt" | "status"> | null>(null);
-  const [currentTwapPlan, setCurrentTwapPlan] = useState<Omit<TwapPlan, "id" | "createdAt" | "status"> | null>(null);
   const [lockTarget, setLockTarget] = useState<TradePlan | null>(null);
+  const [showLockModal, setShowLockModal] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
+    }
+  }, [input]);
+
+  // Scroll to results when plan appears
+  useEffect(() => {
+    if (currentPlan && resultsRef.current) {
+      resultsRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [currentPlan]);
 
   const addToast = useCallback((type: "success" | "error", title: string, message?: string) => {
     const id = `toast-${Date.now()}`;
@@ -37,25 +56,16 @@ export function RouterPage() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const handleInputSubmit = useCallback((input: string) => {
-    const intent = parseRouterIntent(input);
+  const processInput = useCallback((text: string) => {
+    const intent = parseRouterIntent(text);
 
     if (intent.type === "twap") {
-      // TWAP intent - show TWAP modal
       const template = { ...ZEC_TWAP_TEMPLATE };
-      if (intent.market) {
-        template.market = intent.market;
-      }
-      if (intent.risk) {
-        template.maxRisk = intent.risk;
-      }
-      if (intent.notional) {
-        template.totalNotional = intent.notional;
-      }
-      setCurrentTwapPlan(template);
-      setActiveModal("twap");
+      if (intent.market) template.market = intent.market;
+      if (intent.risk) template.maxRisk = intent.risk;
+      if (intent.notional) template.totalNotional = intent.notional;
+      setCurrentPlan({ type: "twap", plan: template });
     } else if (intent.type === "trade") {
-      // Trade intent - show trade modal
       let template;
       if (intent.market === "BTC-PERP" && intent.direction === "short") {
         template = { ...BTC_SHORT_TEMPLATE };
@@ -64,33 +74,43 @@ export function RouterPage() {
       } else if (intent.market === "SOL-PERP") {
         template = { ...SOL_LONG_TEMPLATE };
       } else {
-        // Default to BTC short or long based on direction
         template = intent.direction === "short" 
           ? { ...BTC_SHORT_TEMPLATE }
           : { ...SOL_LONG_TEMPLATE };
       }
 
-      // Override with parsed values
-      if (intent.direction) {
-        template.direction = intent.direction;
-      }
-      if (intent.risk) {
-        template.maxRisk = intent.risk;
-      }
-      if (intent.stop) {
-        template.stopPrice = intent.stop;
-      }
+      if (intent.direction) template.direction = intent.direction;
+      if (intent.risk) template.maxRisk = intent.risk;
+      if (intent.stop) template.stopPrice = intent.stop;
 
-      setCurrentTradePlan(template);
-      setActiveModal("trade");
+      setCurrentPlan({ type: "trade", plan: template });
     } else {
-      // Unknown intent - show a generic response
-      addToast("error", "Couldn't parse that", "Try: 'short BTC max 3k risk, stop 92k'");
+      addToast("error", "Couldn't understand that", "Try: 'short BTC, $3k risk, stop at 92k'");
     }
   }, [addToast]);
 
-  const handleArmTrade = useCallback((plan: TradePlan) => {
+  const handleSubmit = () => {
+    if (input.trim()) {
+      processInput(input.trim());
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  };
+
+  const handleRefine = useCallback((message: string) => {
+    // Process refinement - in demo, just re-parse with the new message
+    processInput(message);
+  }, [processInput]);
+
+  const handleConfirmTrade = useCallback((plan: TradePlan) => {
     setTrades((prev) => [...prev, plan]);
+    setCurrentPlan(null);
+    setInput("");
     addToast(
       "success",
       `${plan.market} ${plan.direction.toUpperCase()} confirmed`,
@@ -98,8 +118,10 @@ export function RouterPage() {
     );
   }, [addToast]);
 
-  const handleStartTwap = useCallback((plan: TwapPlan) => {
+  const handleConfirmTwap = useCallback((plan: TwapPlan) => {
     setTwaps((prev) => [...prev, plan]);
+    setCurrentPlan(null);
+    setInput("");
     addToast(
       "success",
       `Execution started: ${plan.market}`,
@@ -111,7 +133,7 @@ export function RouterPage() {
     const plan = trades.find((t) => t.id === planId);
     if (plan) {
       setLockTarget(plan);
-      setActiveModal("lock");
+      setShowLockModal(true);
     }
   }, [trades]);
 
@@ -119,6 +141,8 @@ export function RouterPage() {
     setTrades((prev) =>
       prev.map((t) => (t.id === planId ? { ...t, status: "protected" as const } : t))
     );
+    setShowLockModal(false);
+    setLockTarget(null);
     addToast("success", "Risk limit enabled", "This position is now protected (demo)");
   }, [addToast]);
 
@@ -130,81 +154,134 @@ export function RouterPage() {
     setTwaps((prev) => prev.filter((t) => t.id !== planId));
   }, []);
 
-  const closeModal = useCallback(() => {
-    setActiveModal(null);
-    setCurrentTradePlan(null);
-    setCurrentTwapPlan(null);
-    setLockTarget(null);
-  }, []);
+  const handleSuggestionClick = (suggestion: string) => {
+    setInput(suggestion);
+    textareaRef.current?.focus();
+  };
 
   return (
     <div className="h-screen flex">
       {/* Main content area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="px-8 py-6 border-b border-[#2d2e2f]">
+        <header className="flex-shrink-0 px-8 py-5 border-b border-[#2d2e2f]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#20b2aa] to-[#20b2aa]/60 flex items-center justify-center">
-              <Zap className="w-5 h-5 text-white" />
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#20b2aa] to-[#20b2aa]/60 flex items-center justify-center">
+              <Zap className="w-4 h-4 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-semibold text-[#e8e8e8]">Router</h1>
-              <p className="text-sm text-[#6b6c6d]">Structure trades with built-in risk limits</p>
+              <h1 className="text-lg font-semibold text-[#e8e8e8]">Router</h1>
+              <p className="text-xs text-[#6b6c6d]">Structure trades with built-in risk limits</p>
             </div>
           </div>
         </header>
 
-        {/* Main input area */}
-        <div className="flex-1 flex flex-col items-center justify-center px-8 py-12">
-          <div className="w-full max-w-2xl">
-            {/* Hero text */}
-            <div className="text-center mb-8">
-              <h2 className="text-3xl font-semibold text-[#e8e8e8] mb-3">
-                What do you want to trade?
-              </h2>
-              <p className="text-[#9a9b9c] text-lg">
-                Describe your trade in plain English. We&apos;ll calculate the right
-                <br />
-                position size, entry, and stop based on your risk.
-              </p>
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-2xl mx-auto px-8 py-8">
+            {/* Hero - only show when no current plan */}
+            {!currentPlan && (
+              <div className="text-center mb-8">
+                <h2 className="text-2xl font-semibold text-[#e8e8e8] mb-2">
+                  What do you want to trade?
+                </h2>
+                <p className="text-[#9a9b9c]">
+                  Describe your trade in plain English. We&apos;ll calculate the right size based on your risk.
+                </p>
+              </div>
+            )}
+
+            {/* Input area */}
+            <div className="relative mb-4">
+              <div className="relative bg-[#1e1f20] border border-[#2d2e2f] rounded-2xl overflow-hidden focus-within:border-[#3d3e3f] transition-colors">
+                <textarea
+                  ref={textareaRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="e.g., short BTC with $3k max risk, stop at 92k"
+                  rows={1}
+                  className="w-full bg-transparent text-[#e8e8e8] placeholder-[#6b6c6d] px-5 py-4 pr-14 resize-none focus:outline-none text-base leading-relaxed"
+                  style={{ minHeight: "56px" }}
+                />
+                
+                <button
+                  onClick={handleSubmit}
+                  disabled={!input.trim()}
+                  className={`absolute right-3 bottom-3 p-2.5 rounded-xl transition-all ${
+                    input.trim()
+                      ? "bg-[#20b2aa] hover:bg-[#2cc5bc] text-white"
+                      : "bg-[#2d2e2f] text-[#6b6c6d] cursor-not-allowed"
+                  }`}
+                >
+                  <ArrowUp className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
-            {/* Input */}
-            <RouterInput onSubmit={handleInputSubmit} />
+            {/* Suggestions - only show when no plan */}
+            {!currentPlan && (
+              <div className="flex flex-wrap gap-2 mb-8">
+                {[
+                  "short BTC, $3k max risk, stop at 92k",
+                  "long SOL, risk $2k, stop at 180",
+                  "buy $50k of ZEC slowly over 15 min",
+                ].map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    onClick={() => handleSuggestionClick(suggestion)}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-[#242526] hover:bg-[#2d2e2f] border border-[#2d2e2f] rounded-xl text-sm text-[#9a9b9c] hover:text-[#e8e8e8] transition-colors"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+            )}
 
-            {/* How it works */}
-            <div className="mt-12 grid grid-cols-3 gap-6">
-              {[
-                {
-                  step: "1",
-                  title: "Describe your trade",
-                  desc: "Tell us what you want to trade and your max risk",
-                },
-                {
-                  step: "2",
-                  title: "Review the plan",
-                  desc: "See the calculated size, entry, and stop",
-                },
-                {
-                  step: "3",
-                  title: "Confirm",
-                  desc: "One click to place your risk-limited trade",
-                },
-              ].map((item) => (
-                <div key={item.step} className="text-center">
-                  <div className="w-8 h-8 rounded-full bg-[#242526] border border-[#3d3e3f] flex items-center justify-center mx-auto mb-3">
-                    <span className="text-sm font-semibold text-[#20b2aa]">{item.step}</span>
+            {/* Results area */}
+            {currentPlan && (
+              <div ref={resultsRef} className="mt-6">
+                {currentPlan.type === "trade" && (
+                  <TradePlanCard
+                    plan={currentPlan.plan}
+                    onConfirm={handleConfirmTrade}
+                    onRefine={handleRefine}
+                  />
+                )}
+                {currentPlan.type === "twap" && (
+                  <TwapPlanCard
+                    plan={currentPlan.plan}
+                    onConfirm={handleConfirmTwap}
+                    onRefine={handleRefine}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* How it works - only show when no plan */}
+            {!currentPlan && (
+              <div className="mt-8 grid grid-cols-3 gap-4">
+                {[
+                  { step: "1", title: "Describe your trade", desc: "Tell us what and how much risk" },
+                  { step: "2", title: "Review the plan", desc: "See size, entry, and stop" },
+                  { step: "3", title: "Confirm", desc: "One click to place" },
+                ].map((item) => (
+                  <div key={item.step} className="text-center p-4 bg-[#1e1f20] rounded-xl border border-[#2d2e2f]">
+                    <div className="w-7 h-7 rounded-full bg-[#242526] border border-[#3d3e3f] flex items-center justify-center mx-auto mb-2">
+                      <span className="text-xs font-semibold text-[#20b2aa]">{item.step}</span>
+                    </div>
+                    <h3 className="text-sm font-medium text-[#e8e8e8] mb-0.5">{item.title}</h3>
+                    <p className="text-xs text-[#6b6c6d]">{item.desc}</p>
                   </div>
-                  <h3 className="text-sm font-medium text-[#e8e8e8] mb-1">{item.title}</h3>
-                  <p className="text-xs text-[#6b6c6d]">{item.desc}</p>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Demo notice */}
-        <div className="px-8 py-4 border-t border-[#2d2e2f]">
+        {/* Footer */}
+        <div className="flex-shrink-0 px-8 py-3 border-t border-[#2d2e2f]">
           <p className="text-xs text-[#6b6c6d] text-center">
             Demo only • No real trading • All data is simulated
           </p>
@@ -222,28 +299,10 @@ export function RouterPage() {
         />
       </div>
 
-      {/* Modals */}
-      {currentTradePlan && (
-        <NewTradeModal
-          isOpen={activeModal === "trade"}
-          onClose={closeModal}
-          onArm={handleArmTrade}
-          initialPlan={currentTradePlan}
-        />
-      )}
-
-      {currentTwapPlan && (
-        <TwapModal
-          isOpen={activeModal === "twap"}
-          onClose={closeModal}
-          onStart={handleStartTwap}
-          initialPlan={currentTwapPlan}
-        />
-      )}
-
+      {/* Lock Risk Modal - keeping this one as a true modal since it's a commitment action */}
       <LockRiskModal
-        isOpen={activeModal === "lock"}
-        onClose={closeModal}
+        isOpen={showLockModal}
+        onClose={() => { setShowLockModal(false); setLockTarget(null); }}
         onLock={handleConfirmLock}
         plan={lockTarget}
       />
@@ -252,4 +311,3 @@ export function RouterPage() {
     </div>
   );
 }
-
