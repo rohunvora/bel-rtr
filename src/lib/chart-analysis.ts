@@ -132,67 +132,74 @@ export interface ChartAnalysis {
 }
 
 // ============================================
-// PROMPTS
+// PROMPTS - TWO-PASS APPROACH
+// ============================================
+// Pass 1: Read the chart and think (freeform)
+// Pass 2: Structure the thinking into JSON
 // ============================================
 
-const PATTERN_ANALYSIS_PROMPT = `You are an expert technical analyst. The user has shared a chart and asked a question. Your job is to:
+// PASS 1: Freeform chart reading - just think out loud
+const CHART_READING_PROMPT = `You're a trader looking at this chart. Read it and think out loud.
 
-1. LISTEN to their specific question and answer it directly
-2. IDENTIFY any clear technical analysis patterns on the chart
-3. EXPLAIN what you see in plain language they can understand
+Cover these naturally (not as a rigid checklist):
 
-PATTERN RECOGNITION - Look for these patterns (only identify if clearly present):
-- Triangles (ascending, descending, symmetrical)
-- Head & Shoulders / Inverse H&S
-- Double Top / Double Bottom
-- Wedges (rising, falling)
-- Channels (ascending, descending, horizontal)
-- Flags and Pennants
-- Cup and Handle
-- Support/Resistance levels
-- Trendlines
+1. THE STORY: What happened here? Big pump? Crash? Slow bleed? Ranging? Paint the picture of what this chart shows.
 
-If no clear pattern exists, say so honestly. Don't force a pattern that isn't there.
+2. KEY LEVELS: Where did price REACT in the past?
+   - Highs where it reversed (resistance)
+   - Lows where it bounced (support)
+   - Levels tested multiple times
+   - Where big moves started/ended
+   Be specific with prices you can see on the chart.
 
-Respond with ONLY valid JSON (no markdown, no code blocks):
+3. WHERE ARE WE NOW: Current price relative to those levels. At support? At resistance? Middle of a range? Breakout?
+
+4. WHAT I'D WATCH: What would make you bullish from here? Bearish? What's the "line in the sand"?
+
+Write 4-8 sentences like you're talking to another trader. Be specific with actual prices from the chart.`;
+
+// PASS 2: Convert the thinking into structured JSON
+const STRUCTURE_EXTRACTION_PROMPT = `Based on your chart analysis, extract the structured data.
+
+YOUR ANALYSIS:
+{ANALYSIS}
+
+USER'S QUESTION: {USER_QUESTION}
+
+Convert to ONLY valid JSON (no markdown):
 
 {
+  "conversationalResponse": "<2-4 sentences directly answering the user's question, using insights from your analysis>",
   "pattern": {
-    "name": "<pattern name or 'No Clear Pattern' if none>",
-    "confidence": "<'high', 'medium', or 'low'>",
-    "description": "<what makes this a valid pattern on THIS chart - be specific, reference the chart itself>"
+    "name": "<descriptive name: 'Post-pump consolidation', 'Range 3M-5M', 'Downtrend', etc.>",
+    "confidence": "<'high'|'medium'|'low'>",
+    "description": "<one sentence on the structure>"
   },
   "keyLevels": [
     {
       "price": <number>,
-      "label": "<what this level represents, e.g. 'Triangle Support', 'Neckline'>",
-      "type": "<'support', 'resistance', 'trendline', or 'pattern'>"
+      "label": "<e.g. 'Resistance - pump high', 'Support - multiple bounces'>",
+      "type": "<'support'|'resistance'>"
     }
   ],
   "interpretation": {
-    "typical": "<what this pattern typically means, with rough probability if known>",
-    "forThisChart": "<what it means for THIS specific chart given the context>"
+    "typical": "<what usually happens in this setup>",
+    "forThisChart": "<specific implications>"
   },
   "breakScenarios": [
     {
-      "direction": "<'up' or 'down'>",
-      "trigger": "<what would confirm this scenario>",
-      "target": <price target number>,
-      "targetReason": "<why this target - based on pattern measurement or structure>",
-      "probability": "<'higher', 'lower', or 'equal' probability>"
+      "direction": "<'up'|'down'>",
+      "trigger": "<what confirms it>",
+      "target": <number>,
+      "targetReason": "<why>",
+      "probability": "<'higher'|'lower'|'equal'>"
     }
   ],
-  "currentPrice": <current price from chart>,
-  "priceRelativeToPattern": "<where price is now relative to the pattern>",
-  "conversationalResponse": "<DIRECT answer to the user's question - 2-4 sentences, conversational, helpful. Reference the pattern if relevant. This is the main thing the user will read.>"
+  "currentPrice": <number>,
+  "priceRelativeToPattern": "<where price is now>"
 }
 
-CRITICAL RULES:
-- Answer the user's ACTUAL question first
-- Be honest about confidence levels
-- Use plain language, not jargon
-- Reference specific things visible on the chart
-- If you're not sure, say so`;
+IMPORTANT: Include ALL key levels from your analysis (usually 2-5). The levels should be from historical price reaction, not just current price.`;
 
 const TRADE_SETUP_PROMPT = `You are an expert crypto perps trader. Based on the chart and pattern analysis, provide a structured trade setup.
 
@@ -248,7 +255,9 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
 // ============================================
 
 /**
- * Conversational pattern analysis - responds to user's question and identifies patterns
+ * Two-pass chart analysis:
+ * Pass 1: Read the chart and think freely (no JSON constraints)
+ * Pass 2: Structure the thinking into JSON
  */
 export async function analyzeChartPattern(
   imageBase64: string, 
@@ -260,7 +269,11 @@ export async function analyzeChartPattern(
   }
 
   try {
-    const response = await client.models.generateContent({
+    // ============================================
+    // PASS 1: Freeform chart reading
+    // ============================================
+    console.log("Pass 1: Reading chart...");
+    const readingResponse = await client.models.generateContent({
       model: "gemini-2.0-flash",
       contents: [
         {
@@ -272,20 +285,50 @@ export async function analyzeChartPattern(
                 data: imageBase64,
               },
             },
-            { text: `${PATTERN_ANALYSIS_PROMPT}\n\nUser's question: "${userQuestion}"` },
+            { text: `${CHART_READING_PROMPT}\n\nThe user asked: "${userQuestion}"` },
           ],
         },
       ],
     });
 
-    const parts = response.candidates?.[0]?.content?.parts || [];
-    let text = "";
-    for (const part of parts) {
-      if (part.text) text += part.text;
+    const readingParts = readingResponse.candidates?.[0]?.content?.parts || [];
+    let chartReading = "";
+    for (const part of readingParts) {
+      if (part.text) chartReading += part.text;
+    }
+    
+    console.log("Chart reading:", chartReading);
+
+    if (!chartReading.trim()) {
+      return createEmptyPatternAnalysis("Failed to read chart");
+    }
+
+    // ============================================
+    // PASS 2: Structure the analysis into JSON
+    // ============================================
+    console.log("Pass 2: Structuring analysis...");
+    const structurePrompt = STRUCTURE_EXTRACTION_PROMPT
+      .replace("{ANALYSIS}", chartReading)
+      .replace("{USER_QUESTION}", userQuestion);
+
+    const structureResponse = await client.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: structurePrompt }],
+        },
+      ],
+    });
+
+    const structureParts = structureResponse.candidates?.[0]?.content?.parts || [];
+    let structuredText = "";
+    for (const part of structureParts) {
+      if (part.text) structuredText += part.text;
     }
 
     try {
-      const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const cleaned = structuredText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
       const parsed = JSON.parse(cleaned);
       
       return {
@@ -295,14 +338,15 @@ export async function analyzeChartPattern(
         breakScenarios: parsed.breakScenarios || [],
         currentPrice: parsed.currentPrice || 0,
         priceRelativeToPattern: parsed.priceRelativeToPattern || "",
-        conversationalResponse: parsed.conversationalResponse || "I analyzed the chart but couldn't form a clear response.",
+        conversationalResponse: parsed.conversationalResponse || chartReading, // Fallback to raw reading
         success: true,
       };
     } catch (parseError) {
-      console.error("Failed to parse pattern analysis:", parseError);
+      console.error("Failed to parse structured analysis:", parseError);
+      // If JSON parsing fails, return the raw chart reading as the response
       return {
         ...createEmptyPatternAnalysis(),
-        conversationalResponse: text, // Return raw text as response
+        conversationalResponse: chartReading,
         success: true,
       };
     }
