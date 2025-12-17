@@ -18,6 +18,20 @@ function getAI() {
 }
 
 // ============================================
+// LOGGING HELPERS
+// ============================================
+
+function logSection(title: string) {
+  console.log(`\n${"=".repeat(60)}`);
+  console.log(`📊 ${title}`);
+  console.log("=".repeat(60));
+}
+
+function logSubsection(title: string) {
+  console.log(`\n--- ${title} ---`);
+}
+
+// ============================================
 // TYPES - Story-first, no targets
 // ============================================
 
@@ -201,16 +215,23 @@ export async function analyzeChart(
   imageBase64: string,
   userQuestion?: string
 ): Promise<ChartAnalysis> {
+  logSection("CHART ANALYSIS STARTED");
+  console.log(`📝 User question: "${userQuestion || "(default)"}"`);
+  console.log(`🖼️ Image size: ${(imageBase64.length / 1024).toFixed(1)} KB`);
+  
   const client = getAI();
   if (!client) {
+    console.error("❌ API client not available");
     return createEmptyAnalysis("API key not configured");
   }
 
   const question = userQuestion || "What's the story on this chart? What are the key levels and what should I watch for?";
 
   try {
-    console.log("Analyzing chart with story-first prompt...");
+    logSubsection("Calling Gemini API for analysis");
+    console.log("🤖 Model: gemini-2.0-flash");
     
+    const startTime = Date.now();
     const response = await client.models.generateContent({
       model: "gemini-2.0-flash",
       contents: [
@@ -228,6 +249,7 @@ export async function analyzeChart(
         },
       ],
     });
+    console.log(`⏱️ API response time: ${Date.now() - startTime}ms`);
 
     const parts = response.candidates?.[0]?.content?.parts || [];
     let text = "";
@@ -235,9 +257,19 @@ export async function analyzeChart(
       if (part.text) text += part.text;
     }
 
+    logSubsection("Raw AI Response");
+    console.log("📄 Response length:", text.length, "chars");
+    console.log("📄 First 500 chars:", text.substring(0, 500));
+
     try {
       const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
       const parsed = JSON.parse(cleaned);
+      
+      logSubsection("Parsed Analysis Data");
+      console.log("📊 Story:", parsed.story?.substring(0, 100) + "...");
+      console.log("💰 Current Price from AI:", parsed.currentPrice);
+      console.log("🏷️ Symbol:", parsed.symbol);
+      console.log("⏰ Timeframe:", parsed.timeframe);
       
       const currentPrice = parsed.currentPrice || 0;
       
@@ -245,44 +277,77 @@ export async function analyzeChart(
       // VALIDATION GATES - Hard rules
       // ============================================
       
-      let keyZones: KeyZone[] = (parsed.keyZones || []).slice(0, 4);
+      logSubsection("Key Zones - BEFORE Validation");
+      const rawZones: KeyZone[] = parsed.keyZones || [];
+      console.log(`📍 Raw zones from AI: ${rawZones.length}`);
+      rawZones.forEach((z, i) => {
+        console.log(`   Zone ${i + 1}: $${z.price} (${z.type}) - "${z.label}" - ${z.strength}`);
+      });
+      
+      let keyZones: KeyZone[] = rawZones.slice(0, 4);
       
       // Gate 1: Filter impossible values
+      logSubsection("Validation Gate 1: Impossible Values");
+      const beforeGate1 = keyZones.length;
       keyZones = keyZones.filter(z => {
         if (z.price <= 0) {
-          console.log(`Filtering zone: price ${z.price} is invalid`);
+          console.log(`   ❌ FILTERED: $${z.price} - invalid (<=0)`);
           return false;
         }
         if (currentPrice > 0 && z.price > currentPrice * 10) {
-          console.log(`Filtering zone: price ${z.price} is >10x current price`);
+          console.log(`   ❌ FILTERED: $${z.price} - too high (>10x current price $${currentPrice})`);
           return false;
         }
+        console.log(`   ✅ KEPT: $${z.price}`);
         return true;
       });
+      console.log(`   Result: ${beforeGate1} → ${keyZones.length} zones`);
       
       // Gate 2: Filter zones too close to current price (within 3%)
+      logSubsection("Validation Gate 2: Proximity Filter (3%)");
+      const beforeGate2 = keyZones.length;
       if (currentPrice > 0) {
         keyZones = keyZones.filter(z => {
           const diff = Math.abs(z.price - currentPrice) / currentPrice;
+          const pctDiff = (diff * 100).toFixed(1);
           if (diff < 0.03) {
-            console.log(`Filtering zone at $${z.price} - too close to current price $${currentPrice} (${(diff * 100).toFixed(1)}%)`);
+            console.log(`   ❌ FILTERED: $${z.price} - too close to current $${currentPrice} (${pctDiff}%)`);
             return false;
           }
+          console.log(`   ✅ KEPT: $${z.price} - ${pctDiff}% from current`);
           return true;
         });
+      } else {
+        console.log("   ⚠️ Skipped: No current price to compare against");
       }
+      console.log(`   Result: ${beforeGate2} → ${keyZones.length} zones`);
       
       // Gate 3: Limit to 4 zones
       keyZones = keyZones.slice(0, 4);
       
-      // Parse scenarios - ensure they're conditionals
+      logSubsection("Key Zones - AFTER Validation");
+      console.log(`📍 Final zones: ${keyZones.length}`);
+      keyZones.forEach((z, i) => {
+        console.log(`   Zone ${i + 1}: $${z.price} (${z.type}) - "${z.label}"`);
+      });
+      
+      if (keyZones.length === 0) {
+        console.log("   ⚠️ WARNING: No zones survived validation!");
+      }
+      
+      // Parse scenarios
+      logSubsection("Scenarios");
       let scenarios: Scenario[] = (parsed.scenarios || []).slice(0, 2);
+      console.log(`📋 Raw scenarios from AI: ${scenarios.length}`);
+      scenarios.forEach((s, i) => {
+        console.log(`   Scenario ${i + 1}: "${s.condition?.substring(0, 50)}..."`);
+      });
+      
       scenarios = scenarios.map(s => ({
         condition: s.condition || "If price action changes...",
         implication: s.implication || "...the thesis would need to be re-evaluated",
       }));
       
-      // Ensure we have 2 scenarios
       while (scenarios.length < 2) {
         scenarios.push({
           condition: "Unable to determine",
@@ -303,14 +368,22 @@ export async function analyzeChart(
         success: true,
       };
 
+      logSubsection("Final Analysis Summary");
+      console.log(`✅ Analysis complete`);
+      console.log(`   Story: ${analysis.story.substring(0, 80)}...`);
+      console.log(`   Current Price: $${analysis.currentPrice}`);
+      console.log(`   Key Zones: ${analysis.keyZones.length}`);
+      console.log(`   Scenarios: ${analysis.scenarios.length}`);
+      
       return analysis;
     } catch (parseError) {
-      console.error("Failed to parse analysis:", parseError);
+      console.error("❌ JSON Parse Error:", parseError);
+      console.error("❌ Raw text that failed to parse:", text.substring(0, 500));
       return createEmptyAnalysis("Failed to parse response");
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "Failed to analyze chart";
-    console.error("Analysis error:", error);
+    console.error("❌ Analysis API Error:", error);
     return createEmptyAnalysis(errorMessage);
   }
 }
@@ -344,7 +417,6 @@ function buildAnnotationBrief(analysis: ChartAnalysis): object {
     current_price: analysis.currentPrice,
     current_price_formatted: formatPrice(analysis.currentPrice),
     
-    // Explicit instruction: no arrows
     rules: [
       "Draw horizontal zones ONLY",
       "NO arrows or projections",
@@ -364,14 +436,28 @@ export async function annotateChart(
   imageBase64: string,
   analysis: ChartAnalysis
 ): Promise<string | null> {
+  logSection("CHART ANNOTATION STARTED");
+  
   const client = getAI();
-  if (!client) return null;
+  if (!client) {
+    console.error("❌ API client not available for annotation");
+    return null;
+  }
 
+  logSubsection("Building Annotation Instructions");
+  console.log(`📍 Zones to annotate: ${analysis.keyZones.length}`);
+  
   // Build explicit zone instructions
   const zoneInstructions = analysis.keyZones.map(zone => {
     const color = zone.type === "support" ? "GREEN" : "RED";
-    return `- ${color} zone at $${zone.price} (${zone.label})`;
+    const instruction = `- ${color} zone at $${zone.price} (${zone.label})`;
+    console.log(`   ${instruction}`);
+    return instruction;
   }).join("\n");
+
+  if (analysis.keyZones.length === 0) {
+    console.log("   ⚠️ WARNING: No zones to annotate! Annotation may be empty.");
+  }
 
   const userPrompt = `Add support and resistance zones to this chart.
 
@@ -399,9 +485,14 @@ The goal is a clean chart where a trader can immediately see the key price level
 USER REQUEST:
 ${userPrompt}`;
 
+  logSubsection("Full Prompt Being Sent");
+  console.log(fullPrompt);
+
   try {
-    console.log("Creating zone-only annotation with gemini-2.0-flash-preview-image-generation...");
+    logSubsection("Calling Image Generation API");
+    console.log("🤖 Model: gemini-2.0-flash-preview-image-generation");
     
+    const startTime = Date.now();
     const response = await client.models.generateContent({
       model: "gemini-2.0-flash-preview-image-generation",
       contents: [
@@ -422,20 +513,37 @@ ${userPrompt}`;
         responseModalities: ["IMAGE"],
       },
     });
+    console.log(`⏱️ API response time: ${Date.now() - startTime}ms`);
 
     const parts = response.candidates?.[0]?.content?.parts || [];
+    console.log(`📦 Response parts: ${parts.length}`);
     
-    for (const part of parts) {
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      console.log(`   Part ${i + 1}:`, {
+        hasText: !!part.text,
+        hasInlineData: !!part.inlineData,
+        inlineDataMimeType: part.inlineData?.mimeType,
+        inlineDataSize: part.inlineData?.data ? `${(part.inlineData.data.length / 1024).toFixed(1)} KB` : null,
+      });
+      
       if (part.inlineData?.data) {
-        console.log("Successfully created zone-only annotation");
+        console.log(`✅ Successfully got annotated image (${(part.inlineData.data.length / 1024).toFixed(1)} KB)`);
         return part.inlineData.data;
       }
     }
+    
+    console.log("⚠️ No image data in response parts");
+    
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    console.log("Primary annotation failed, trying fallback:", errorMessage);
+    console.error("❌ Primary annotation failed:", errorMessage);
+    
+    logSubsection("Trying Fallback Model");
+    console.log("🤖 Model: gemini-3-pro-image-preview");
     
     try {
+      const startTime = Date.now();
       const response = await client.models.generateContent({
         model: "gemini-3-pro-image-preview",
         contents: [
@@ -456,21 +564,25 @@ ${userPrompt}`;
           responseModalities: ["IMAGE"],
         },
       });
+      console.log(`⏱️ Fallback API response time: ${Date.now() - startTime}ms`);
 
       const parts = response.candidates?.[0]?.content?.parts || [];
+      console.log(`📦 Fallback response parts: ${parts.length}`);
       
       for (const part of parts) {
         if (part.inlineData?.data) {
-          console.log("Successfully created annotation with fallback model");
+          console.log(`✅ Successfully got annotated image from fallback (${(part.inlineData.data.length / 1024).toFixed(1)} KB)`);
           return part.inlineData.data;
         }
       }
+      
+      console.log("⚠️ No image data in fallback response");
     } catch (fallbackError) {
-      console.log("Fallback annotation also failed:", fallbackError);
+      console.error("❌ Fallback annotation also failed:", fallbackError);
     }
   }
 
-  console.log("All annotation attempts failed");
+  console.log("❌ All annotation attempts failed - returning null");
   return null;
 }
 
@@ -479,14 +591,20 @@ ${userPrompt}`;
 // ============================================
 
 export function generateAnnotationPlan(analysis: ChartAnalysis): AnnotationPlan {
+  logSubsection("Generating Canvas Annotation Plan");
+  
   const marks: AnnotationMark[] = [];
   const theme: "dark" | "light" = "dark";
+  
+  console.log(`📍 Creating marks for ${analysis.keyZones.length} zones`);
   
   // Add zones for each key level
   for (const zone of analysis.keyZones) {
     const bandSize = zone.price * 0.008; // 0.8% band
     const opacity = zone.strength === "strong" ? 0.22 : 
                    zone.strength === "moderate" ? 0.16 : 0.10;
+    
+    console.log(`   Zone: $${zone.price} (${zone.type}) - band: $${(zone.price - bandSize).toFixed(2)} to $${(zone.price + bandSize).toFixed(2)}`);
     
     marks.push({
       type: "zone",
@@ -506,6 +624,7 @@ export function generateAnnotationPlan(analysis: ChartAnalysis): AnnotationPlan 
   
   // Add current price marker
   if (analysis.currentPrice > 0) {
+    console.log(`   Current price line: $${analysis.currentPrice}`);
     marks.push({
       type: "line",
       role: "current_price",
@@ -513,6 +632,8 @@ export function generateAnnotationPlan(analysis: ChartAnalysis): AnnotationPlan 
       style: "dashed",
     });
   }
+  
+  console.log(`📊 Total marks created: ${marks.length}`);
   
   return {
     theme,
@@ -526,6 +647,7 @@ export function generateAnnotationPlan(analysis: ChartAnalysis): AnnotationPlan 
 // ============================================
 
 function createEmptyAnalysis(error?: string): ChartAnalysis {
+  console.log(`⚠️ Creating empty analysis with error: ${error}`);
   return {
     story: error || "Unable to analyze chart",
     currentContext: "Unknown",
