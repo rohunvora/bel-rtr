@@ -1,50 +1,39 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { 
   X,
-  Eye,
-  EyeOff,
-  ArrowUp,
-  ArrowDown,
   Loader2,
   Copy,
   Check,
-  ChevronDown,
-  ChevronRight,
   TrendingUp,
   TrendingDown,
   Minus,
   HelpCircle,
-  Target,
-  AlertTriangle,
-  Zap,
   Send,
   Plus,
   User,
   Sparkles,
   BarChart3,
-  Shield,
   Bookmark,
   Download,
   ZoomIn,
   Maximize2,
-  Share2,
-  Layers,
+  ArrowUpRight,
+  ArrowDownRight,
 } from "lucide-react";
-import { ChartAnalysis, generateAnnotationPlan } from "@/lib/chart-analysis";
+import type { ChartRead } from "@/lib/chart-engine";
 import { chatWithHistory, ChatMessage } from "@/lib/gemini";
 import ReactMarkdown from "react-markdown";
-import ChartOverlayRenderer from "@/components/ChartOverlayRenderer";
 
 interface ChartAnalystCardProps {
-  analysis: ChartAnalysis;
+  analysis: ChartRead;
   originalChart: string;
   annotatedChart: string | null;
   annotationStatus: "loading" | "ready" | "failed";
   userPrompt: string;
   onClose: () => void;
-  onSave?: (analysis: ChartAnalysis) => void;
+  onSave?: (analysis: ChartRead) => void;
 }
 
 // ============================================
@@ -70,7 +59,6 @@ function ChartImageModal({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Close on ESC
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -84,7 +72,6 @@ function ChartImageModal({
       className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4 animate-fade-in"
       onClick={onClose}
     >
-      {/* Toolbar */}
       <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
         <button
           onClick={(e) => { e.stopPropagation(); handleCopy(); }}
@@ -108,7 +95,6 @@ function ChartImageModal({
         </button>
       </div>
       
-      {/* Image */}
       <img 
         src={`data:image/png;base64,${imageBase64}`}
         alt="Chart"
@@ -116,7 +102,6 @@ function ChartImageModal({
         onClick={(e) => e.stopPropagation()}
       />
       
-      {/* Hint */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-sm text-[#6b6c6d]">
         Click outside or press ESC to close
       </div>
@@ -125,33 +110,21 @@ function ChartImageModal({
 }
 
 // ============================================
-// EDUCATION EXPANDABLES
+// EDUCATION TOOLTIPS
 // ============================================
 
 const EXPLANATIONS: Record<string, { title: string; content: string }> = {
   support: {
     title: "Support Level",
-    content: "A price where buyers tend to step in. Think of it as a \"floor\" that price has bounced from before. The more times it's tested and held, the stronger it is.",
+    content: "A price where buyers stepped in before. Price bounced from here. The more bounces, the stronger the level.",
   },
   resistance: {
     title: "Resistance Level", 
-    content: "A price where sellers tend to step in. Think of it as a \"ceiling\" that price has been rejected from. Multiple rejections make it stronger.",
+    content: "A price where sellers stepped in before. Price rejected from here. Multiple rejections make it stronger.",
   },
   pivot: {
     title: "Pivot Point",
-    content: "The key decision price. Above it, bulls have control. Below it, bears have control. Often an EMA, prior high/low, or mid-range level.",
-  },
-  invalidation: {
-    title: "Invalidation",
-    content: "The price where your thesis is proven wrong. If you're bullish and price breaks below invalidation, the bullish case is dead. Always know your \"I was wrong\" price before trading.",
-  },
-  touchCount: {
-    title: "Touch Count",
-    content: "How many times price has reacted at this level. More touches = stronger level. 3+ touches is considered strong. 1 touch is just a \"potential\" level.",
-  },
-  confidence: {
-    title: "Confidence Score",
-    content: "Based on objective factors: touch count, recency of tests, clarity of structure. Low confidence means wait for more confirmation before trading.",
+    content: "The key decision price. Above it, bulls have control. Below it, bears have control.",
   },
 };
 
@@ -189,36 +162,32 @@ function InfoTooltip({ termKey }: { termKey: string }) {
 // SUB-COMPONENTS
 // ============================================
 
-function RegimeBadge({ regime }: { regime: ChartAnalysis["regime"] }) {
-  const trendConfig = {
+function RegimeBadge({ regime }: { regime: ChartRead["regime"] }) {
+  const config = {
     uptrend: { icon: TrendingUp, color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
     downtrend: { icon: TrendingDown, color: "text-rose-400 bg-rose-500/10 border-rose-500/20" },
     range: { icon: Minus, color: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
-    breakout: { icon: ArrowUp, color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
-    breakdown: { icon: ArrowDown, color: "text-rose-400 bg-rose-500/10 border-rose-500/20" },
   };
   
-  const config = trendConfig[regime.trend] || trendConfig.range;
-  const Icon = config.icon;
+  const { icon: Icon, color } = config[regime];
   
   return (
-    <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border ${config.color}`}>
+    <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border ${color}`}>
       <Icon className="w-4 h-4" />
-      <span className="text-sm font-medium capitalize">{regime.trend}</span>
-      <span className="text-xs opacity-60">({regime.strength})</span>
+      <span className="text-sm font-medium capitalize">{regime}</span>
     </div>
   );
 }
 
-function ConfidenceBadge({ confidence }: { confidence: ChartAnalysis["confidence"] }) {
+function ConfidenceBadge({ confidence, reason }: { confidence: ChartRead["confidence"]; reason: string }) {
   const config = {
-    high: { dots: 3, color: "text-emerald-400", label: "High confidence" },
-    medium: { dots: 2, color: "text-amber-400", label: "Medium confidence" },
-    low: { dots: 1, color: "text-rose-400", label: "Low confidence" },
-  }[confidence.overall];
+    high: { dots: 3, color: "text-emerald-400", label: "High" },
+    medium: { dots: 2, color: "text-amber-400", label: "Medium" },
+    low: { dots: 1, color: "text-rose-400", label: "Low" },
+  }[confidence];
   
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2" title={reason}>
       <div className="flex gap-0.5">
         {[1, 2, 3].map((i) => (
           <div 
@@ -228,63 +197,54 @@ function ConfidenceBadge({ confidence }: { confidence: ChartAnalysis["confidence
         ))}
       </div>
       <span className={`text-xs ${config.color}`}>{config.label}</span>
-      <InfoTooltip termKey="confidence" />
     </div>
   );
 }
 
-function LevelRow({ level, index }: { level: ChartAnalysis["keyLevels"][0]; index: number }) {
+function LevelCard({ 
+  type, 
+  price, 
+  label 
+}: { 
+  type: "support" | "resistance" | "pivot"; 
+  price: number; 
+  label: string;
+}) {
   const [copied, setCopied] = useState(false);
   
   const handleCopy = () => {
-    navigator.clipboard.writeText(String(level.price));
+    navigator.clipboard.writeText(String(price));
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
   
-  const isSupport = level.type === "support";
-  const strengthDots = level.strength === "strong" ? 3 : level.strength === "moderate" ? 2 : 1;
+  const colors = {
+    support: "bg-emerald-500/5 border-emerald-500/20 text-emerald-400",
+    resistance: "bg-rose-500/5 border-rose-500/20 text-rose-400",
+    pivot: "bg-blue-500/5 border-blue-500/20 text-blue-400",
+  };
+  
+  const typeLabels = {
+    support: "Support",
+    resistance: "Resistance",
+    pivot: "Pivot",
+  };
   
   return (
-    <div 
-      className={`flex items-center justify-between p-3 rounded-lg border ${
-        isSupport 
-          ? "bg-emerald-500/5 border-emerald-500/20" 
-          : "bg-rose-500/5 border-rose-500/20"
-      }`}
-    >
+    <div className={`flex items-center justify-between p-3 rounded-lg border ${colors[type]}`}>
       <div className="flex items-center gap-3">
-        <div className={`text-xs font-medium px-2 py-0.5 rounded ${
-          isSupport ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-400"
-        }`}>
-          {isSupport ? "S" : "R"}{index + 1}
+        <div className={`text-xs font-medium px-2 py-0.5 rounded ${colors[type]}`}>
+          {typeLabels[type]}
         </div>
-        <div>
-          <div className="text-sm text-[#e8e8e8] font-medium">{level.label}</div>
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-xs text-[#6b6c6d]">{level.touchCount} touches</span>
-            <InfoTooltip termKey="touchCount" />
-            <div className="flex gap-0.5">
-              {[1, 2, 3].map((i) => (
-                <div 
-                  key={i} 
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    i <= strengthDots 
-                      ? (isSupport ? "bg-emerald-400" : "bg-rose-400")
-                      : "bg-[#3d3e3f]"
-                  }`} 
-                />
-              ))}
-            </div>
-          </div>
-        </div>
+        <span className="text-sm text-[#9a9b9c]">{label}</span>
+        <InfoTooltip termKey={type} />
       </div>
       <button 
         onClick={handleCopy}
         className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-[#2d2e2f] transition-colors group"
       >
-        <span className={`font-mono text-sm ${isSupport ? "text-emerald-400" : "text-rose-400"}`}>
-          ${level.price.toLocaleString()}
+        <span className={`font-mono text-sm ${colors[type].split(" ")[2]}`}>
+          ${price.toLocaleString()}
         </span>
         {copied ? (
           <Check className="w-3.5 h-3.5 text-emerald-400" />
@@ -296,70 +256,28 @@ function LevelRow({ level, index }: { level: ChartAnalysis["keyLevels"][0]; inde
   );
 }
 
-function ScenarioCard({ scenario, type }: { scenario: ChartAnalysis["scenarios"]["bullish"]; type: "bullish" | "bearish" }) {
-  const [expanded, setExpanded] = useState(false);
-  const isBullish = type === "bullish";
+function WatchCard({ direction, text }: { direction: "above" | "below"; text: string }) {
+  const isUp = direction === "above";
   
   return (
-    <div className={`rounded-xl border ${
-      isBullish 
+    <div className={`p-3 rounded-lg border ${
+      isUp 
         ? "bg-emerald-500/5 border-emerald-500/20" 
         : "bg-rose-500/5 border-rose-500/20"
     }`}>
-      <button 
-        onClick={() => setExpanded(!expanded)}
-        className="w-full p-3 flex items-center justify-between"
-      >
-        <div className="flex items-center gap-2">
-          {isBullish ? (
-            <ArrowUp className="w-4 h-4 text-emerald-400" />
-          ) : (
-            <ArrowDown className="w-4 h-4 text-rose-400" />
-          )}
-          <span className={`text-sm font-medium ${isBullish ? "text-emerald-400" : "text-rose-400"}`}>
-            {isBullish ? "If Bullish" : "If Bearish"}
-          </span>
-        </div>
-        {expanded ? (
-          <ChevronDown className="w-4 h-4 text-[#6b6c6d]" />
+      <div className="flex items-center gap-2 mb-1">
+        {isUp ? (
+          <ArrowUpRight className="w-4 h-4 text-emerald-400" />
         ) : (
-          <ChevronRight className="w-4 h-4 text-[#6b6c6d]" />
+          <ArrowDownRight className="w-4 h-4 text-rose-400" />
         )}
-      </button>
-      
-      {expanded && (
-        <div className="px-3 pb-3 space-y-3 border-t border-[#2d2e2f] pt-3">
-          <div>
-            <div className="text-xs text-[#6b6c6d] mb-1">Trigger</div>
-            <div className="text-sm text-[#e8e8e8]">{scenario.trigger}</div>
-          </div>
-          
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <div className="text-xs text-[#6b6c6d] mb-1 flex items-center gap-1">
-                <Target className="w-3 h-3" />
-                Target
-              </div>
-              <div className={`text-sm font-mono ${isBullish ? "text-emerald-400" : "text-rose-400"}`}>
-                ${scenario.target.toLocaleString()}
-              </div>
-              <div className="text-xs text-[#6b6c6d] mt-0.5">{scenario.targetReason}</div>
-            </div>
-            
-            <div className="flex-1">
-              <div className="text-xs text-[#6b6c6d] mb-1 flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" />
-                Invalid if
-                <InfoTooltip termKey="invalidation" />
-              </div>
-              <div className="text-sm font-mono text-[#e8e8e8]">
-                ${scenario.invalidation.toLocaleString()}
-              </div>
-              <div className="text-xs text-[#6b6c6d] mt-0.5">{scenario.invalidationReason}</div>
-            </div>
-          </div>
-        </div>
-      )}
+        <span className={`text-xs font-medium uppercase tracking-wide ${
+          isUp ? "text-emerald-400" : "text-rose-400"
+        }`}>
+          Watch {direction}
+        </span>
+      </div>
+      <div className="text-sm text-[#e8e8e8]">{text}</div>
     </div>
   );
 }
@@ -435,8 +353,7 @@ export function ChartAnalystCard({
   onClose,
   onSave,
 }: ChartAnalystCardProps) {
-  // Default to canvas view (deterministic rendering)
-  const [viewMode, setViewMode] = useState<"canvas" | "annotated" | "original">("canvas");
+  const [showAnnotated, setShowAnnotated] = useState(true);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [chatImage, setChatImage] = useState<string | null>(null);
@@ -444,32 +361,14 @@ export function ChartAnalystCard({
   const [saved, setSaved] = useState(false);
   const [showZoom, setShowZoom] = useState(false);
   const [copiedImage, setCopiedImage] = useState(false);
-  const [canvasRenderedImage, setCanvasRenderedImage] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Generate annotation plan from analysis (memoized)
-  const annotationPlan = useMemo(() => generateAnnotationPlan(analysis), [analysis]);
-  
-  // Determine display chart based on view mode
-  const displayChart = useMemo(() => {
-    if (viewMode === "canvas" && canvasRenderedImage) {
-      // Extract base64 from data URL
-      return canvasRenderedImage.replace(/^data:image\/png;base64,/, "");
-    }
-    if (viewMode === "annotated" && annotatedChart) {
-      return annotatedChart;
-    }
-    return originalChart;
-  }, [viewMode, canvasRenderedImage, annotatedChart, originalChart]);
-  
-  // Handle canvas render completion
-  const handleCanvasRenderComplete = useCallback((dataUrl: string) => {
-    setCanvasRenderedImage(dataUrl);
-  }, []);
+  // Display chart (annotated if available and selected, otherwise original)
+  const displayChart = showAnnotated && annotatedChart ? annotatedChart : originalChart;
 
-  // Auto-scroll
+  // Auto-scroll chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages, isTyping]);
@@ -477,47 +376,48 @@ export function ChartAnalystCard({
   // Build context for follow-up chat
   const systemContext = `You are a chart analyst assistant. You previously analyzed a chart and found:
 
-Regime: ${analysis.regime.trend} (${analysis.regime.strength})
-Key levels: ${analysis.keyLevels.map(l => `${l.label} at $${l.price}`).join(", ")}
-Pivot: $${analysis.pivot.price} (${analysis.pivot.label})
-Current price location: ${analysis.priceLocation}
+Story: ${analysis.story}
+Regime: ${analysis.regime}
+Support: ${analysis.support ? `$${analysis.support.price} (${analysis.support.label})` : "none identified"}
+Resistance: ${analysis.resistance ? `$${analysis.resistance.price} (${analysis.resistance.label})` : "none identified"}
+Pivot: ${analysis.pivot ? `$${analysis.pivot.price} (${analysis.pivot.label})` : "none identified"}
+Current price: $${analysis.currentPrice}
 
-Be helpful, concise, and reference your previous analysis when relevant. If asked about trading, always mention the invalidation levels.`;
+What to watch:
+- Above: ${analysis.watchAbove}
+- Below: ${analysis.watchBelow}
 
-  // Download chart image
+Be helpful and concise. Reference the levels when relevant.`;
+
+  // Download chart
   const downloadChart = useCallback(() => {
     const link = document.createElement("a");
     link.href = `data:image/png;base64,${displayChart}`;
-    link.download = `chart-analysis-${analysis.symbol || "chart"}-${new Date().toISOString().split("T")[0]}.png`;
+    link.download = `chart-analysis-${new Date().toISOString().split("T")[0]}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  }, [displayChart, analysis.symbol]);
+  }, [displayChart]);
 
-  // Copy chart image to clipboard
+  // Copy chart to clipboard
   const copyChartToClipboard = useCallback(async () => {
     try {
-      // Convert base64 to blob
       const response = await fetch(`data:image/png;base64,${displayChart}`);
       const blob = await response.blob();
-      
-      // Copy to clipboard
       await navigator.clipboard.write([
         new ClipboardItem({ "image/png": blob })
       ]);
-      
       setCopiedImage(true);
       setTimeout(() => setCopiedImage(false), 2000);
     } catch (error) {
       console.error("Failed to copy image:", error);
-      // Fallback: copy the base64 data URL
       await navigator.clipboard.writeText(`data:image/png;base64,${displayChart}`);
       setCopiedImage(true);
       setTimeout(() => setCopiedImage(false), 2000);
     }
   }, [displayChart]);
 
-  // Handlers
+  // Handle paste
   const handlePaste = (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
     if (!items) return;
@@ -560,7 +460,7 @@ Be helpful, concise, and reference your previous analysis when relevant. If aske
     
     const messagesWithContext: ChatMessage[] = [
       { role: "user", content: "Here is the chart:", image: originalChart },
-      { role: "model", content: analysis.summary },
+      { role: "model", content: analysis.story },
       ...newMessages
     ];
     
@@ -590,10 +490,14 @@ Be helpful, concise, and reference your previous analysis when relevant. If aske
   };
 
   const copyAllLevels = () => {
-    const levels = analysis.keyLevels.map(l => `${l.type.toUpperCase()}: $${l.price.toLocaleString()} (${l.label})`);
-    levels.push(`PIVOT: $${analysis.pivot.price.toLocaleString()}`);
-    navigator.clipboard.writeText(levels.join("\n"));
+    const lines: string[] = [];
+    if (analysis.support) lines.push(`SUPPORT: $${analysis.support.price.toLocaleString()} (${analysis.support.label})`);
+    if (analysis.resistance) lines.push(`RESISTANCE: $${analysis.resistance.price.toLocaleString()} (${analysis.resistance.label})`);
+    if (analysis.pivot) lines.push(`PIVOT: $${analysis.pivot.price.toLocaleString()} (${analysis.pivot.label})`);
+    navigator.clipboard.writeText(lines.join("\n"));
   };
+
+  const hasLevels = analysis.support || analysis.resistance || analysis.pivot;
 
   return (
     <>
@@ -612,12 +516,7 @@ Be helpful, concise, and reference your previous analysis when relevant. If aske
         <div className="px-5 py-3 border-b border-[#2d2e2f] flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3">
             <BarChart3 className="w-5 h-5 text-cyan-400" />
-            <span className="text-sm font-medium text-[#e8e8e8]">Chart Analysis</span>
-            {analysis.symbol && (
-              <span className="text-xs text-[#6b6c6d] bg-[#2d2e2f] px-2 py-0.5 rounded">
-                {analysis.symbol} {analysis.timeframe && `• ${analysis.timeframe}`}
-              </span>
-            )}
+            <span className="text-sm font-medium text-[#e8e8e8]">Chart Read</span>
           </div>
           <div className="flex items-center gap-2">
             {onSave && (
@@ -647,117 +546,85 @@ Be helpful, concise, and reference your previous analysis when relevant. If aske
               <Sparkles className="w-4 h-4 text-cyan-400" />
             </div>
             <div className="flex-1 min-w-0 pt-1 space-y-4">
-              {/* Summary */}
+              {/* Story */}
               <div className="text-sm text-[#e8e8e8] leading-relaxed">
-                {analysis.summary}
+                {analysis.story}
               </div>
               
               {/* Regime + Confidence */}
               <div className="flex items-center gap-4 flex-wrap">
                 <RegimeBadge regime={analysis.regime} />
-                <ConfidenceBadge confidence={analysis.confidence} />
+                <ConfidenceBadge confidence={analysis.confidence} reason={analysis.confidenceReason} />
               </div>
               
-              {/* Chart with zoom/download/copy controls */}
+              {/* Chart with controls */}
               <div className="rounded-xl border border-[#2d2e2f] overflow-hidden bg-[#161717]">
                 <div className="px-3 py-2 flex items-center justify-between border-b border-[#2d2e2f]">
                   <div className="flex items-center gap-1">
-                    {/* Canvas view (deterministic) - always available */}
-                    <button
-                      onClick={() => setViewMode("canvas")}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
-                        viewMode === "canvas"
-                          ? "bg-cyan-500/20 text-cyan-400"
-                          : "text-[#6b6c6d] hover:text-[#9a9b9c]"
-                      }`}
-                      title="Precise overlay rendering"
-                    >
-                      <Layers className="w-3 h-3" />
-                      Overlay
-                    </button>
-                    
-                    {/* AI annotated view - only if available */}
                     {annotatedChart && (
-                      <button
-                        onClick={() => setViewMode("annotated")}
-                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
-                          viewMode === "annotated"
-                            ? "bg-purple-500/20 text-purple-400"
-                            : "text-[#6b6c6d] hover:text-[#9a9b9c]"
-                        }`}
-                        title="AI-generated annotation"
-                      >
-                        <Sparkles className="w-3 h-3" />
-                        AI
-                      </button>
+                      <>
+                        <button
+                          onClick={() => setShowAnnotated(true)}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                            showAnnotated
+                              ? "bg-purple-500/20 text-purple-400"
+                              : "text-[#6b6c6d] hover:text-[#9a9b9c]"
+                          }`}
+                        >
+                          <Sparkles className="w-3 h-3" />
+                          Annotated
+                        </button>
+                        <button
+                          onClick={() => setShowAnnotated(false)}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                            !showAnnotated
+                              ? "bg-[#242526] text-[#e8e8e8]"
+                              : "text-[#6b6c6d] hover:text-[#9a9b9c]"
+                          }`}
+                        >
+                          Original
+                        </button>
+                      </>
                     )}
-                    
-                    {/* Original view */}
-                    <button
-                      onClick={() => setViewMode("original")}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
-                        viewMode === "original" ? "bg-[#242526] text-[#e8e8e8]" : "text-[#6b6c6d] hover:text-[#9a9b9c]"
-                      }`}
-                    >
-                      <EyeOff className="w-3 h-3" />
-                      Original
-                    </button>
-                    
                     {annotationStatus === "loading" && (
                       <div className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-purple-400/60">
                         <Loader2 className="w-3 h-3 animate-spin" />
-                        AI drawing...
+                        Drawing zones...
                       </div>
                     )}
                   </div>
                   
-                  {/* Image actions */}
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => setShowZoom(true)}
                       className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-[#6b6c6d] hover:text-[#9a9b9c] hover:bg-[#242526] transition-colors"
-                      title="Zoom in"
                     >
                       <Maximize2 className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={copyChartToClipboard}
                       className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-[#6b6c6d] hover:text-[#9a9b9c] hover:bg-[#242526] transition-colors"
-                      title="Copy image"
                     >
                       {copiedImage ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                     </button>
                     <button
                       onClick={downloadChart}
                       className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-[#6b6c6d] hover:text-[#9a9b9c] hover:bg-[#242526] transition-colors"
-                      title="Download"
                     >
                       <Download className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
                 
-                {/* Chart display */}
                 <div 
                   className="relative cursor-zoom-in group"
                   onClick={() => setShowZoom(true)}
                 >
-                  {viewMode === "canvas" && !canvasRenderedImage ? (
-                    // Render canvas overlay directly
-                    <ChartOverlayRenderer
-                      imageBase64={originalChart}
-                      plan={annotationPlan}
-                      analysis={analysis}
-                      onRenderComplete={handleCanvasRenderComplete}
-                    />
-                  ) : (
-                    // Show static image (original, AI annotated, or canvas-rendered)
-                    <img 
-                      src={`data:image/png;base64,${displayChart}`} 
-                      alt="Chart" 
-                      className="w-full"
-                    />
-                  )}
+                  <img 
+                    src={`data:image/png;base64,${displayChart}`} 
+                    alt="Chart" 
+                    className="w-full"
+                  />
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100 pointer-events-none">
                     <div className="bg-black/60 rounded-lg px-3 py-2 flex items-center gap-2 text-white text-sm">
                       <ZoomIn className="w-4 h-4" />
@@ -765,22 +632,14 @@ Be helpful, concise, and reference your previous analysis when relevant. If aske
                     </div>
                   </div>
                 </div>
-                
-                {/* Story hint for canvas mode */}
-                {viewMode === "canvas" && annotationPlan.story && (
-                  <div className="px-3 py-2 border-t border-[#2d2e2f] text-xs text-[#9a9b9c]">
-                    <span className="text-cyan-400">Story:</span> {annotationPlan.story}
-                  </div>
-                )}
               </div>
               
               {/* Key Levels */}
-              {analysis.keyLevels.length > 0 && (
+              {hasLevels && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="text-xs text-[#6b6c6d] uppercase tracking-wide flex items-center gap-2">
+                    <div className="text-xs text-[#6b6c6d] uppercase tracking-wide">
                       Key Levels
-                      <InfoTooltip termKey="support" />
                     </div>
                     <button 
                       onClick={copyAllLevels}
@@ -791,57 +650,47 @@ Be helpful, concise, and reference your previous analysis when relevant. If aske
                     </button>
                   </div>
                   <div className="space-y-2">
-                    {analysis.keyLevels.map((level, i) => (
-                      <LevelRow key={i} level={level} index={i} />
-                    ))}
+                    {analysis.resistance && (
+                      <LevelCard 
+                        type="resistance" 
+                        price={analysis.resistance.price} 
+                        label={analysis.resistance.label}
+                      />
+                    )}
+                    {analysis.pivot && (
+                      <LevelCard 
+                        type="pivot" 
+                        price={analysis.pivot.price} 
+                        label={analysis.pivot.label}
+                      />
+                    )}
+                    {analysis.support && (
+                      <LevelCard 
+                        type="support" 
+                        price={analysis.support.price} 
+                        label={analysis.support.label}
+                      />
+                    )}
                   </div>
                 </div>
               )}
               
-              {/* Pivot */}
-              {analysis.pivot.price > 0 && (
-                <div className="p-3 rounded-xl bg-blue-500/5 border border-blue-500/20">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Zap className="w-4 h-4 text-blue-400" />
-                      <span className="text-sm font-medium text-blue-400">Pivot: {analysis.pivot.label}</span>
-                      <InfoTooltip termKey="pivot" />
-                    </div>
-                    <span className="font-mono text-sm text-blue-400">${analysis.pivot.price.toLocaleString()}</span>
-                  </div>
-                  <p className="text-xs text-[#9a9b9c] mt-1">{analysis.pivot.significance}</p>
-                </div>
-              )}
-              
-              {/* Scenarios */}
+              {/* What to Watch */}
               <div className="space-y-2">
-                <div className="text-xs text-[#6b6c6d] uppercase tracking-wide flex items-center gap-2">
-                  Scenarios
-                  <InfoTooltip termKey="invalidation" />
+                <div className="text-xs text-[#6b6c6d] uppercase tracking-wide">
+                  What to Watch
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <ScenarioCard scenario={analysis.scenarios.bullish} type="bullish" />
-                  <ScenarioCard scenario={analysis.scenarios.bearish} type="bearish" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <WatchCard direction="above" text={analysis.watchAbove} />
+                  <WatchCard direction="below" text={analysis.watchBelow} />
                 </div>
               </div>
               
-              {/* Confidence reasons */}
-              {analysis.confidence.reasons.length > 0 && (
-                <div className="p-3 rounded-xl bg-[#1a1b1b] border border-[#2d2e2f]">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Shield className="w-4 h-4 text-[#6b6c6d]" />
-                    <span className="text-xs text-[#6b6c6d] uppercase tracking-wide">Why {analysis.confidence.overall} confidence?</span>
-                  </div>
-                  <ul className="space-y-1">
-                    {analysis.confidence.reasons.map((reason, i) => (
-                      <li key={i} className="text-xs text-[#9a9b9c] flex items-start gap-2">
-                        <span className="text-[#6b6c6d]">•</span>
-                        {reason}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+              {/* Current price */}
+              <div className="flex items-center gap-2 text-sm text-[#6b6c6d]">
+                <span>Current price:</span>
+                <span className="font-mono text-[#e8e8e8]">${analysis.currentPrice.toLocaleString()}</span>
+              </div>
             </div>
           </div>
           
