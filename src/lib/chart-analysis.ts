@@ -162,37 +162,36 @@ HARD RULES (DO NOT BREAK):
 9. If you can't see clear structure, say so - don't make things up`;
 
 // ============================================
-// ANNOTATION SYSTEM INSTRUCTION - Zones only
+// ANNOTATION SYSTEM INSTRUCTION
 // ============================================
 
-const ANNOTATION_SYSTEM_INSTRUCTION = `You are a professional chart markup artist.
+const ANNOTATION_SYSTEM_INSTRUCTION = `You are a professional technical-analysis chart markup artist.
 
-Your ONLY job is to draw clean horizontal zones on the chart to highlight key support/resistance levels.
+Your job is to edit a candlestick chart by overlaying clean, high-signal annotations that highlight key support and resistance zones.
 
-WHAT TO DRAW:
-1. Horizontal zones (semi-transparent bands) for support and resistance
-2. A small label on each zone ("Support", "Resistance")
-3. Optionally, a marker showing current price location
+PRIMARY GOAL: Draw horizontal zones at the SPECIFIC PRICE LEVELS provided. A trader should look at your annotated chart and immediately see "these are the key levels to watch."
 
-WHAT NOT TO DRAW:
-- NO arrows or projection paths
-- NO trend lines
-- NO targets
-- NO price predictions
-- NO diagonal lines
-- NO complex annotations
+REQUIRED ELEMENTS:
+1. SUPPORT ZONES: Draw semi-transparent GREEN horizontal bands at support prices
+2. RESISTANCE ZONES: Draw semi-transparent RED horizontal bands at resistance prices  
+3. LABELS: Add small text labels near each zone (e.g., "Support $10", "Resistance $45")
 
-STYLE:
-- Green zones for support
-- Red zones for resistance  
-- Zones should be semi-transparent (candles must be visible through them)
-- Labels should be small and positioned near the right edge
-- Maximum 4 zones total
-- Keep it clean and minimal
+ZONE STYLE:
+- Zones should be semi-transparent bands (not just lines) - about 2-3% price height
+- GREEN/CYAN for support zones
+- RED/PINK for resistance zones
+- Zones must span the full width of the chart area
+- Candles MUST remain visible through the zones
+- Labels should be positioned near the right edge of the chart
 
-The goal is CLARITY, not complexity. A beginner should be able to look at this and immediately see "these are the important price zones."
+CRITICAL RULES:
+1. You MUST draw zones at the EXACT price levels provided in the brief
+2. Read the Y-axis to place zones accurately
+3. Do NOT redraw or distort the candles
+4. Do NOT add arrows, trend lines, or projections
+5. Keep it clean - just the zones and labels
 
-Return a single edited image with overlays applied.`;
+Return a single edited image with the zone overlays applied.`;
 
 // ============================================
 // ANALYSIS FUNCTION
@@ -368,21 +367,30 @@ export async function annotateChart(
   const client = getAI();
   if (!client) return null;
 
-  const brief = buildAnnotationBrief(analysis);
+  // Build explicit zone instructions
+  const zoneInstructions = analysis.keyZones.map(zone => {
+    const color = zone.type === "support" ? "GREEN" : "RED";
+    return `- ${color} zone at $${zone.price} (${zone.label})`;
+  }).join("\n");
 
-  const userPrompt = `Draw clean horizontal zones on this chart to highlight key support/resistance.
+  const userPrompt = `Add support and resistance zones to this chart.
 
-Use this brief (do not invent numbers):
-${JSON.stringify(brief, null, 2)}
+ZONES TO DRAW (read the Y-axis to place these accurately):
+${zoneInstructions || "- No specific zones provided, identify key levels from the chart"}
 
-Requirements:
-- Draw horizontal ZONES (semi-transparent bands) at the price levels specified
-- Green zones for support, red zones for resistance
-- Add small labels: "Support" or "Resistance" near right edge of each zone
-- Zones must be semi-transparent (candles visible through them)
-- Maximum 4 zones
-- NO arrows, NO projections, NO diagonal lines
-- Keep it clean and minimal`;
+Current price: $${analysis.currentPrice}
+
+INSTRUCTIONS:
+1. Draw HORIZONTAL semi-transparent bands at each price level listed above
+2. GREEN/CYAN bands for support levels (below current price)
+3. RED/PINK bands for resistance levels (above current price)
+4. Each zone should be a band about 2-3% of the price range in height
+5. Add a small label near the right edge of each zone with the price
+6. Zones must span the full width of the chart
+7. Keep candles visible through the zones (semi-transparent)
+8. NO arrows, NO projections, NO trend lines - just horizontal zones
+
+The goal is a clean chart where a trader can immediately see the key price levels.`;
 
   const fullPrompt = `${ANNOTATION_SYSTEM_INSTRUCTION}
 
