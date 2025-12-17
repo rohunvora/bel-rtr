@@ -490,11 +490,11 @@ ${userPrompt}`;
 
   try {
     logSubsection("Calling Image Generation API");
-    console.log("🤖 Model: gemini-2.0-flash-preview-image-generation");
+    console.log("🤖 Model: gemini-3-pro-image-preview");
     
     const startTime = Date.now();
     const response = await client.models.generateContent({
-      model: "gemini-2.0-flash-preview-image-generation",
+      model: "gemini-3-pro-image-preview",
       contents: [
         {
           role: "user",
@@ -510,7 +510,7 @@ ${userPrompt}`;
         },
       ],
       config: {
-        responseModalities: ["IMAGE"],
+        responseModalities: ["TEXT", "IMAGE"],
       },
     });
     console.log(`⏱️ API response time: ${Date.now() - startTime}ms`);
@@ -534,56 +534,13 @@ ${userPrompt}`;
     }
     
     console.log("⚠️ No image data in response parts");
+    return null;
     
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    console.error("❌ Primary annotation failed:", errorMessage);
-    
-    logSubsection("Trying Fallback Model");
-    console.log("🤖 Model: gemini-3-pro-image-preview");
-    
-    try {
-      const startTime = Date.now();
-      const response = await client.models.generateContent({
-        model: "gemini-3-pro-image-preview",
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                inlineData: {
-                  mimeType: "image/png",
-                  data: imageBase64,
-                },
-              },
-              { text: fullPrompt },
-            ],
-          },
-        ],
-        config: {
-          responseModalities: ["IMAGE"],
-        },
-      });
-      console.log(`⏱️ Fallback API response time: ${Date.now() - startTime}ms`);
-
-      const parts = response.candidates?.[0]?.content?.parts || [];
-      console.log(`📦 Fallback response parts: ${parts.length}`);
-      
-      for (const part of parts) {
-        if (part.inlineData?.data) {
-          console.log(`✅ Successfully got annotated image from fallback (${(part.inlineData.data.length / 1024).toFixed(1)} KB)`);
-          return part.inlineData.data;
-        }
-      }
-      
-      console.log("⚠️ No image data in fallback response");
-    } catch (fallbackError) {
-      console.error("❌ Fallback annotation also failed:", fallbackError);
-    }
+    console.error("❌ Annotation failed:", errorMessage);
+    return null;
   }
-
-  console.log("❌ All annotation attempts failed - returning null");
-  return null;
 }
 
 // ============================================
