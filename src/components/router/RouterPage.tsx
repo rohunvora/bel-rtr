@@ -66,12 +66,8 @@ function RecentAnalysisCard({
             {saved.analysis.symbol || "Chart"} {saved.analysis.timeframe && `• ${saved.analysis.timeframe}`}
           </div>
           <div className="text-xs text-[#6b6c6d] flex items-center gap-2">
-            <span className={`capitalize ${
-              saved.analysis.regime.trend === "uptrend" ? "text-emerald-400" :
-              saved.analysis.regime.trend === "downtrend" ? "text-rose-400" :
-              "text-amber-400"
-            }`}>
-              {saved.analysis.regime.trend}
+            <span className="text-cyan-400">
+              {saved.analysis.keyZones?.length || 0} zones
             </span>
             <span>•</span>
             <span>{timeSince}</span>
