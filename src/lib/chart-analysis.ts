@@ -49,6 +49,41 @@ export interface Scenario {
   // NO target field - we describe outcomes, not predict prices
 }
 
+// ============================================
+// NEW: Extended Pattern Types
+// ============================================
+
+export interface Regime {
+  type: "trending_up" | "trending_down" | "ranging" | "breakout" | "breakdown";
+  confidence: number; // 0-1
+}
+
+export interface RangeBox {
+  high: number;
+  low: number;
+  confidence: number; // 0-1
+}
+
+export interface PivotPoint {
+  price: number;
+  label: "HH" | "HL" | "LH" | "LL"; // Higher High, Higher Low, Lower High, Lower Low
+}
+
+export interface Pivots {
+  points: PivotPoint[];
+  confidence: number; // 0-1
+}
+
+export interface Fakeout {
+  level: number;
+  direction: "above" | "below";
+  confidence: number; // 0-1
+}
+
+// ============================================
+// MAIN ANALYSIS TYPE
+// ============================================
+
 export interface ChartAnalysis {
   // The narrative - this is the core
   story: string;           // 2-3 sentence narrative of what happened on this chart
@@ -63,6 +98,14 @@ export interface ChartAnalysis {
   // Risk management
   invalidation: string;    // What would change the thesis entirely
   
+  // REGIME - Always present
+  regime: Regime;          // Market regime classification
+  
+  // CONDITIONAL PATTERNS - Only present if detected with confidence
+  rangeBox?: RangeBox;     // Range bounds if market is ranging
+  pivots?: Pivots;         // Key pivot points if clear structure
+  fakeouts?: Fakeout[];    // Failed breakouts/fakeouts if visible
+  
   // Metadata
   currentPrice: number;
   symbol?: string;
@@ -75,12 +118,101 @@ export interface ChartAnalysis {
 }
 
 // ============================================
+// VALIDATION & DISPLAY GATING
+// ============================================
+
+// Confidence thresholds for display (tune these over time)
+export const DISPLAY_THRESHOLDS = {
+  rangeBox: 0.8,   // Only show if confidence >= 0.8
+  pivots: 1.1,     // Hidden for now (set > 1.0 to disable)
+  fakeouts: 1.1,   // Hidden for now (set > 1.0 to disable)
+};
+
+export interface ValidatedAnalysis {
+  display: ChartAnalysis;  // What user sees (filtered)
+  logged: ChartAnalysis;   // Full output for debugging
+  filtered: {
+    rangeBox: boolean;
+    pivots: boolean;
+    fakeouts: boolean;
+    reasons: string[];
+  };
+}
+
+export function validateAnalysis(raw: ChartAnalysis): ValidatedAnalysis {
+  logSubsection("Validation Layer - Display Gating");
+  
+  const filtered = {
+    rangeBox: false,
+    pivots: false,
+    fakeouts: false,
+    reasons: [] as string[],
+  };
+  
+  // Start with full analysis for display
+  const display: ChartAnalysis = { ...raw };
+  
+  // Gate rangeBox
+  if (raw.rangeBox) {
+    if (raw.rangeBox.confidence < DISPLAY_THRESHOLDS.rangeBox) {
+      display.rangeBox = undefined;
+      filtered.rangeBox = true;
+      filtered.reasons.push(`RangeBox filtered: ${(raw.rangeBox.confidence * 100).toFixed(0)}% < ${(DISPLAY_THRESHOLDS.rangeBox * 100).toFixed(0)}% threshold`);
+    } else {
+      console.log(`   ✅ RangeBox PASSED: ${(raw.rangeBox.confidence * 100).toFixed(0)}% >= ${(DISPLAY_THRESHOLDS.rangeBox * 100).toFixed(0)}%`);
+    }
+  }
+  
+  // Gate pivots
+  if (raw.pivots) {
+    if (raw.pivots.confidence < DISPLAY_THRESHOLDS.pivots) {
+      display.pivots = undefined;
+      filtered.pivots = true;
+      filtered.reasons.push(`Pivots filtered: ${(raw.pivots.confidence * 100).toFixed(0)}% < ${(DISPLAY_THRESHOLDS.pivots * 100).toFixed(0)}% threshold (hidden)`);
+    } else {
+      console.log(`   ✅ Pivots PASSED: ${(raw.pivots.confidence * 100).toFixed(0)}% >= ${(DISPLAY_THRESHOLDS.pivots * 100).toFixed(0)}%`);
+    }
+  }
+  
+  // Gate fakeouts
+  if (raw.fakeouts && raw.fakeouts.length > 0) {
+    const avgConfidence = raw.fakeouts.reduce((sum, f) => sum + f.confidence, 0) / raw.fakeouts.length;
+    if (avgConfidence < DISPLAY_THRESHOLDS.fakeouts) {
+      display.fakeouts = undefined;
+      filtered.fakeouts = true;
+      filtered.reasons.push(`Fakeouts filtered: avg ${(avgConfidence * 100).toFixed(0)}% < ${(DISPLAY_THRESHOLDS.fakeouts * 100).toFixed(0)}% threshold (hidden)`);
+    } else {
+      console.log(`   ✅ Fakeouts PASSED: avg ${(avgConfidence * 100).toFixed(0)}% >= ${(DISPLAY_THRESHOLDS.fakeouts * 100).toFixed(0)}%`);
+    }
+  }
+  
+  // Log summary
+  console.log(`   📊 Display gating results:`);
+  console.log(`      - Zones: Always shown (${display.keyZones.length})`);
+  console.log(`      - Regime: Always shown (${display.regime.type})`);
+  console.log(`      - RangeBox: ${display.rangeBox ? 'Shown' : 'Hidden'}`);
+  console.log(`      - Pivots: ${display.pivots ? 'Shown' : 'Hidden'}`);
+  console.log(`      - Fakeouts: ${display.fakeouts ? 'Shown' : 'Hidden'}`);
+  
+  if (filtered.reasons.length > 0) {
+    console.log(`   📝 Filter reasons:`);
+    filtered.reasons.forEach(r => console.log(`      - ${r}`));
+  }
+  
+  return {
+    display,
+    logged: raw,
+    filtered,
+  };
+}
+
+// ============================================
 // ANNOTATION PLAN - Zones only, no arrows
 // ============================================
 
 export interface AnnotationMark {
-  type: "zone" | "line" | "label";
-  role: "support" | "resistance" | "current_price";
+  type: "zone" | "line" | "label" | "range_box" | "pivot" | "fakeout";
+  role: "support" | "resistance" | "current_price" | "range" | "pivot_hh" | "pivot_hl" | "pivot_lh" | "pivot_ll" | "fakeout_above" | "fakeout_below";
   price?: number;
   priceHigh?: number;
   priceLow?: number;
@@ -96,18 +228,20 @@ export interface AnnotationPlan {
 }
 
 // ============================================
-// PROMPT - Story-first, zones, conditionals
+// PROMPT - Layered detection with confidence
 // ============================================
 
 const CHART_ANALYSIS_PROMPT = `You are a chart reader helping someone understand what a chart is telling them. Your job is NOT to predict prices - it's to explain what has happened and what to watch for next.
 
-STEP 1: TELL THE STORY (this is the most important part)
+=== LAYER 1: CORE (REQUIRED) ===
+
+STEP 1: TELL THE STORY
 Look at the chart and describe what happened like you're explaining it to a friend:
 - "This thing pumped from $X to $Y, then crashed back to $Z..."
 - "It's been stuck between these two levels for weeks..."
 - "There was a breakdown from $X, and it's been bleeding since..."
 
-Be specific with prices you can see on the chart. Tell the NARRATIVE.
+Be specific with prices you can READ FROM THE Y-AXIS. Use ACTUAL wick highs/lows, not round numbers.
 
 STEP 2: IDENTIFY KEY ZONES (max 4)
 Find 2-4 price zones where price REACTED MULTIPLE TIMES in the past:
@@ -115,32 +249,58 @@ Find 2-4 price zones where price REACTED MULTIPLE TIMES in the past:
 - Lows where price bounced (support)
 - Breakdown/breakout origins
 
-CRITICAL: A zone is NOT where price currently is. A zone is where price REACTED before.
+CRITICAL: A zone is NOT where price currently is. Read the ACTUAL price from the Y-axis where wicks touched.
 
 STEP 3: CONDITIONAL SCENARIOS (not predictions)
 Give 2 conditional scenarios using "If... then..." format:
-- "If price reclaims $X and holds, that suggests buyers are back in control..."
-- "If price loses $Y support, expect further weakness toward the next zone..."
-
 Don't predict targets. Describe what it would MEAN if something happens.
 
 STEP 4: INVALIDATION
-What would completely change your read on this chart? What's the "I was wrong" level?
+What would completely change your read on this chart?
+
+=== LAYER 2: REGIME (REQUIRED) ===
+
+Classify the current market regime:
+- "trending_up": Making higher highs and higher lows
+- "trending_down": Making lower highs and lower lows  
+- "ranging": Oscillating between defined support and resistance
+- "breakout": Just broke above prior resistance, continuation expected
+- "breakdown": Just broke below prior support, continuation expected
+
+Include your confidence (0.0 to 1.0) in this classification.
+
+=== LAYER 3: CONDITIONAL PATTERNS (ONLY IF CLEARLY VISIBLE) ===
+
+Only include these if you can see them clearly with confidence > 0.7:
+
+RANGE BOX (if regime is "ranging"):
+- high: The resistance ceiling of the range (read EXACT price from Y-axis)
+- low: The support floor of the range (read EXACT price from Y-axis)
+
+PIVOTS (if clear swing structure is visible):
+- Mark recent pivot points as HH (Higher High), HL (Higher Low), LH (Lower High), LL (Lower Low)
+- Only include if the structure is obvious
+
+FAKEOUTS (if you see failed breakouts):
+- A level where price broke above/below but then reversed
+- Include direction ("above" or "below") and the price level
+
+If you're not confident about these patterns, LEAVE THEM NULL.
 
 USER'S QUESTION: {USER_QUESTION}
 
 Respond with ONLY valid JSON (no markdown, no code blocks):
 
 {
-  "story": "<2-3 sentences describing WHAT HAPPENED on this chart. Be specific with prices. Example: 'This pumped from $5 to $50 in early 2024, then crashed 80% back to $10. It's now consolidating between $10 support and $20 resistance after a failed rally to $25.'>",
+  "story": "<2-3 sentences describing WHAT HAPPENED. Be specific with ACTUAL prices from Y-axis. Example: 'This pumped from $4.80 to $48.50 in early 2024, then crashed 80% back to $9.75. It's now consolidating between $10.20 support and $22.40 resistance.'>",
   
-  "currentContext": "<1 sentence on where price is NOW in that story. Example: 'Currently sitting at $15, in the middle of the range, waiting for direction.'>",
+  "currentContext": "<1 sentence on where price is NOW. Example: 'Currently at $15.30, mid-range, waiting for direction.'>",
   
   "keyZones": [
     {
-      "price": <number from axis - NOT current price>,
+      "price": <EXACT number from Y-axis - read the actual wick high/low, not round numbers>,
       "label": "<short label: 'Pump high', 'Crash low', 'Range resistance', 'Prior breakdown'>",
-      "significance": "<why this zone matters: 'Rejected 3x in March', 'Breakdown origin from ATH', 'Bounce zone during selloff'>",
+      "significance": "<why this zone matters: 'Rejected 3x in March', 'Breakdown origin', 'Bounce zone'>",
       "type": "<'support'|'resistance'>",
       "strength": "<'weak' if 1 touch, 'moderate' if 2, 'strong' if 3+>"
     }
@@ -157,22 +317,33 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
     }
   ],
   
-  "invalidation": "<What price action would completely invalidate this read? Example: 'A clean break and hold above $50 would change everything - that's the ATH and would suggest new price discovery.'>",
+  "invalidation": "<What would completely invalidate this read?>",
   
-  "currentPrice": <number from chart>,
+  "regime": {
+    "type": "<'trending_up'|'trending_down'|'ranging'|'breakout'|'breakdown'>",
+    "confidence": <0.0 to 1.0>
+  },
+  
+  "rangeBox": <if regime is "ranging" AND you can clearly see bounds: { "high": <exact price>, "low": <exact price>, "confidence": <0.0-1.0> } | otherwise: null>,
+  
+  "pivots": <if clear swing structure visible: { "points": [{ "price": <num>, "label": "<HH|HL|LH|LL>" }], "confidence": <0.0-1.0> } | otherwise: null>,
+  
+  "fakeouts": <if failed breakouts visible: [{ "level": <price>, "direction": "<above|below>", "confidence": <0.0-1.0> }] | otherwise: null>,
+  
+  "currentPrice": <exact number from chart>,
   "symbol": "<ticker if visible, null if not>",
   "timeframe": "<timeframe if visible, null if not>"
 }
 
 HARD RULES (DO NOT BREAK):
-1. The "story" field must tell what HAPPENED, not what MIGHT happen
+1. READ ACTUAL PRICES FROM Y-AXIS - not round numbers. If the wick high is $22.40, say $22.40, not $22 or $25.
 2. keyZones must be zones where price REACTED in the past, not where price currently is
-3. scenarios must use "If... then..." conditional format
-4. scenarios describe MEANING, not price targets
-5. Never include current price as a key zone
-6. Never say "break above current price" - that's meaningless
-7. Max 4 key zones - pick the most important ones
-8. Every zone must have a historical reason (rejection, bounce, breakout/breakdown origin)
+3. scenarios describe MEANING, not price targets
+4. Never include current price as a key zone
+5. Max 4 key zones - pick the most important ones
+6. Every zone must have a historical reason (rejection, bounce, breakout/breakdown origin)
+7. Regime classification is REQUIRED - always include it
+8. Layer 3 patterns (rangeBox, pivots, fakeouts) are OPTIONAL - only include if confidence > 0.7
 9. If you can't see clear structure, say so - don't make things up`;
 
 // ============================================
@@ -181,7 +352,7 @@ HARD RULES (DO NOT BREAK):
 
 const ANNOTATION_SYSTEM_INSTRUCTION = `You are a professional technical-analysis chart markup artist.
 
-Your job is to edit a candlestick chart by overlaying clean, high-signal annotations that highlight key support and resistance zones.
+Your job is to edit a candlestick chart by overlaying clean, high-signal annotations that highlight key levels and patterns.
 
 PRIMARY GOAL: Draw horizontal zones at the SPECIFIC PRICE LEVELS provided. A trader should look at your annotated chart and immediately see "these are the key levels to watch."
 
@@ -190,10 +361,16 @@ REQUIRED ELEMENTS:
 2. RESISTANCE ZONES: Draw semi-transparent RED horizontal bands at resistance prices  
 3. LABELS: Add small text labels near each zone (e.g., "Support $10", "Resistance $45")
 
+OPTIONAL ELEMENTS (only if specified):
+4. RANGE BOX: If provided, draw a semi-transparent BLUE rectangle spanning the range high to low
+5. PIVOT MARKERS: If provided, small circle markers at HH/HL/LH/LL points with labels
+6. FAKEOUT CALLOUTS: If provided, small annotation at the fakeout level
+
 ZONE STYLE:
 - Zones should be semi-transparent bands (not just lines) - about 2-3% price height
 - GREEN/CYAN for support zones
 - RED/PINK for resistance zones
+- BLUE/PURPLE for range boxes (lighter opacity than zones)
 - Zones must span the full width of the chart area
 - Candles MUST remain visible through the zones
 - Labels should be positioned near the right edge of the chart
@@ -203,9 +380,9 @@ CRITICAL RULES:
 2. Read the Y-axis to place zones accurately
 3. Do NOT redraw or distort the candles
 4. Do NOT add arrows, trend lines, or projections
-5. Keep it clean - just the zones and labels
+5. Keep it clean - zones, range boxes, and labels only
 
-Return a single edited image with the zone overlays applied.`;
+Return a single edited image with the overlays applied.`;
 
 // ============================================
 // ANALYSIS FUNCTION
@@ -355,12 +532,84 @@ export async function analyzeChart(
         });
       }
       
+      // ============================================
+      // PARSE REGIME (Required - Layer 2)
+      // ============================================
+      logSubsection("Regime Classification");
+      const rawRegime = parsed.regime || { type: "ranging", confidence: 0.5 };
+      const regime: Regime = {
+        type: rawRegime.type || "ranging",
+        confidence: Math.min(1, Math.max(0, rawRegime.confidence || 0.5)),
+      };
+      console.log(`🎯 Regime: ${regime.type} (confidence: ${(regime.confidence * 100).toFixed(0)}%)`);
+      
+      // ============================================
+      // PARSE CONDITIONAL PATTERNS (Layer 3 - gated)
+      // ============================================
+      logSubsection("Conditional Patterns (Layer 3)");
+      
+      // Range Box
+      let rangeBox: RangeBox | undefined = undefined;
+      if (parsed.rangeBox && parsed.rangeBox.confidence >= 0.7) {
+        rangeBox = {
+          high: parsed.rangeBox.high,
+          low: parsed.rangeBox.low,
+          confidence: parsed.rangeBox.confidence,
+        };
+        console.log(`📦 Range Box: $${rangeBox.low} - $${rangeBox.high} (conf: ${(rangeBox.confidence * 100).toFixed(0)}%)`);
+      } else if (parsed.rangeBox) {
+        console.log(`📦 Range Box FILTERED: conf ${(parsed.rangeBox.confidence * 100).toFixed(0)}% < 70% threshold`);
+      } else {
+        console.log(`📦 Range Box: Not detected`);
+      }
+      
+      // Pivots
+      let pivots: Pivots | undefined = undefined;
+      if (parsed.pivots && parsed.pivots.confidence >= 0.7 && parsed.pivots.points?.length > 0) {
+        pivots = {
+          points: parsed.pivots.points.map((p: { price: number; label: string }) => ({
+            price: p.price,
+            label: p.label as "HH" | "HL" | "LH" | "LL",
+          })),
+          confidence: parsed.pivots.confidence,
+        };
+        console.log(`📍 Pivots: ${pivots.points.length} points (conf: ${(pivots.confidence * 100).toFixed(0)}%)`);
+        pivots.points.forEach(p => console.log(`      ${p.label} @ $${p.price}`));
+      } else if (parsed.pivots) {
+        console.log(`📍 Pivots FILTERED: conf ${(parsed.pivots?.confidence * 100 || 0).toFixed(0)}% < 70% threshold`);
+      } else {
+        console.log(`📍 Pivots: Not detected`);
+      }
+      
+      // Fakeouts
+      let fakeouts: Fakeout[] | undefined = undefined;
+      if (parsed.fakeouts && Array.isArray(parsed.fakeouts) && parsed.fakeouts.length > 0) {
+        const validFakeouts = parsed.fakeouts.filter((f: Fakeout) => f.confidence >= 0.7);
+        if (validFakeouts.length > 0) {
+          fakeouts = validFakeouts.map((f: Fakeout) => ({
+            level: f.level,
+            direction: f.direction as "above" | "below",
+            confidence: f.confidence,
+          }));
+          console.log(`⚡ Fakeouts: ${validFakeouts.length} detected`);
+          validFakeouts.forEach((f: Fakeout) => console.log(`      ${f.direction} $${f.level} (conf: ${(f.confidence * 100).toFixed(0)}%)`));
+        } else {
+          console.log(`⚡ Fakeouts FILTERED: all below 70% confidence threshold`);
+        }
+      } else {
+        console.log(`⚡ Fakeouts: Not detected`);
+      }
+      
       const analysis: ChartAnalysis = {
         story: parsed.story || "Unable to read chart story",
         currentContext: parsed.currentContext || "Current position unclear",
         keyZones,
         scenarios,
         invalidation: parsed.invalidation || "Invalidation level not identified",
+        regime,
+        rangeBox,
+        pivots,
+        fakeouts,
         currentPrice,
         symbol: parsed.symbol || undefined,
         timeframe: parsed.timeframe || undefined,
@@ -372,8 +621,12 @@ export async function analyzeChart(
       console.log(`✅ Analysis complete`);
       console.log(`   Story: ${analysis.story.substring(0, 80)}...`);
       console.log(`   Current Price: $${analysis.currentPrice}`);
+      console.log(`   Regime: ${analysis.regime.type} (${(analysis.regime.confidence * 100).toFixed(0)}%)`);
       console.log(`   Key Zones: ${analysis.keyZones.length}`);
       console.log(`   Scenarios: ${analysis.scenarios.length}`);
+      console.log(`   Range Box: ${analysis.rangeBox ? 'Yes' : 'No'}`);
+      console.log(`   Pivots: ${analysis.pivots ? analysis.pivots.points.length : 0}`);
+      console.log(`   Fakeouts: ${analysis.fakeouts ? analysis.fakeouts.length : 0}`);
       
       return analysis;
     } catch (parseError) {
@@ -459,10 +712,32 @@ export async function annotateChart(
     console.log("   ⚠️ WARNING: No zones to annotate! Annotation may be empty.");
   }
 
+  // Build range box instructions if present
+  let rangeBoxInstruction = "";
+  if (analysis.rangeBox) {
+    rangeBoxInstruction = `
+RANGE BOX TO DRAW:
+- Draw a semi-transparent BLUE/PURPLE rectangle from $${analysis.rangeBox.low} (bottom) to $${analysis.rangeBox.high} (top)
+- This represents the trading range the asset is stuck in
+- Make it lighter opacity than the support/resistance zones`;
+    console.log(`📦 Range box: $${analysis.rangeBox.low} - $${analysis.rangeBox.high}`);
+  }
+
+  // Build pivot instructions if present (future use)
+  let pivotInstruction = "";
+  if (analysis.pivots && analysis.pivots.points.length > 0) {
+    pivotInstruction = `
+PIVOT MARKERS TO DRAW:
+${analysis.pivots.points.map(p => `- ${p.label} at $${p.price}`).join("\n")}
+- Mark each with a small circle and label`;
+    console.log(`📍 Pivots: ${analysis.pivots.points.length} points`);
+  }
+
   const userPrompt = `Add support and resistance zones to this chart.
 
 ZONES TO DRAW (read the Y-axis to place these accurately):
 ${zoneInstructions || "- No specific zones provided, identify key levels from the chart"}
+${rangeBoxInstruction}${pivotInstruction}
 
 Current price: $${analysis.currentPrice}
 
@@ -474,7 +749,7 @@ INSTRUCTIONS:
 5. Add a small label near the right edge of each zone with the price
 6. Zones must span the full width of the chart
 7. Keep candles visible through the zones (semi-transparent)
-8. NO arrows, NO projections, NO trend lines - just horizontal zones
+8. NO arrows, NO projections, NO trend lines - just horizontal zones and any range box specified
 
 The goal is a clean chart where a trader can immediately see the key price levels.`;
 
@@ -579,6 +854,46 @@ export function generateAnnotationPlan(analysis: ChartAnalysis): AnnotationPlan 
     });
   }
   
+  // Add range box if present
+  if (analysis.rangeBox) {
+    console.log(`   Range box: $${analysis.rangeBox.low} to $${analysis.rangeBox.high}`);
+    marks.push({
+      type: "range_box",
+      role: "range",
+      priceHigh: analysis.rangeBox.high,
+      priceLow: analysis.rangeBox.low,
+      opacity: 0.08, // Very light
+    });
+  }
+  
+  // Add pivot markers if present
+  if (analysis.pivots && analysis.pivots.points.length > 0) {
+    for (const pivot of analysis.pivots.points) {
+      const role = `pivot_${pivot.label.toLowerCase()}` as "pivot_hh" | "pivot_hl" | "pivot_lh" | "pivot_ll";
+      console.log(`   Pivot: ${pivot.label} @ $${pivot.price}`);
+      marks.push({
+        type: "pivot",
+        role,
+        price: pivot.price,
+        text: pivot.label,
+      });
+    }
+  }
+  
+  // Add fakeout markers if present
+  if (analysis.fakeouts && analysis.fakeouts.length > 0) {
+    for (const fakeout of analysis.fakeouts) {
+      const role = fakeout.direction === "above" ? "fakeout_above" : "fakeout_below";
+      console.log(`   Fakeout: ${fakeout.direction} @ $${fakeout.level}`);
+      marks.push({
+        type: "fakeout",
+        role,
+        price: fakeout.level,
+        text: `Fakeout ${fakeout.direction}`,
+      });
+    }
+  }
+  
   // Add current price marker
   if (analysis.currentPrice > 0) {
     console.log(`   Current price line: $${analysis.currentPrice}`);
@@ -614,6 +929,7 @@ function createEmptyAnalysis(error?: string): ChartAnalysis {
       { condition: "Unable to determine", implication: "Analysis failed" },
     ],
     invalidation: "Unknown",
+    regime: { type: "ranging", confidence: 0 },
     currentPrice: 0,
     analyzedAt: new Date().toISOString(),
     success: false,

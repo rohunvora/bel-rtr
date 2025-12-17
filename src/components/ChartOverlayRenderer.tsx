@@ -10,7 +10,7 @@ interface ChartOverlayRendererProps {
   onRenderComplete?: (dataUrl: string) => void;
 }
 
-// Color scheme - zones only
+// Color scheme - zones and patterns
 const COLORS = {
   dark: {
     support: "rgba(34, 197, 94, 0.8)", // green-500
@@ -18,6 +18,11 @@ const COLORS = {
     resistance: "rgba(239, 68, 68, 0.8)", // red-500
     resistanceZone: "rgba(239, 68, 68, 0.15)",
     currentPrice: "rgba(250, 204, 21, 0.9)", // yellow-400
+    rangeBox: "rgba(59, 130, 246, 0.1)", // blue-500
+    rangeBorder: "rgba(59, 130, 246, 0.5)",
+    pivotHigh: "rgba(34, 197, 94, 0.9)", // green for HH/HL
+    pivotLow: "rgba(239, 68, 68, 0.9)", // red for LH/LL
+    fakeout: "rgba(251, 191, 36, 0.8)", // amber-400
     label: "rgba(255, 255, 255, 0.95)",
     labelBg: "rgba(0, 0, 0, 0.7)",
   },
@@ -27,6 +32,11 @@ const COLORS = {
     resistance: "rgba(220, 38, 38, 0.9)",
     resistanceZone: "rgba(220, 38, 38, 0.12)",
     currentPrice: "rgba(202, 138, 4, 0.9)",
+    rangeBox: "rgba(59, 130, 246, 0.08)",
+    rangeBorder: "rgba(59, 130, 246, 0.4)",
+    pivotHigh: "rgba(22, 163, 74, 0.9)",
+    pivotLow: "rgba(220, 38, 38, 0.9)",
+    fakeout: "rgba(245, 158, 11, 0.8)",
     label: "rgba(0, 0, 0, 0.9)",
     labelBg: "rgba(255, 255, 255, 0.85)",
   },
@@ -51,6 +61,19 @@ export function ChartOverlayRenderer({
     analysis.keyZones.forEach(zone => {
       if (zone.price > 0) prices.push(zone.price);
     });
+    
+    // Include range box if present
+    if (analysis.rangeBox) {
+      if (analysis.rangeBox.high > 0) prices.push(analysis.rangeBox.high);
+      if (analysis.rangeBox.low > 0) prices.push(analysis.rangeBox.low);
+    }
+    
+    // Include pivots if present
+    if (analysis.pivots) {
+      analysis.pivots.points.forEach(p => {
+        if (p.price > 0) prices.push(p.price);
+      });
+    }
     
     if (prices.length === 0) return { min: 0, max: 100 };
     
@@ -191,6 +214,79 @@ export function ChartOverlayRenderer({
                          colors.label;
         ctx.fillStyle = textColor;
         ctx.fillText(text, labelX, labelY + 2);
+        break;
+      }
+      
+      case "range_box": {
+        const y1 = toY(mark.priceHigh || 0);
+        const y2 = toY(mark.priceLow || 0);
+        
+        // Draw filled rectangle
+        ctx.fillStyle = colors.rangeBox;
+        ctx.globalAlpha = mark.opacity || 0.08;
+        ctx.fillRect(chartArea.left, Math.min(y1, y2), chartArea.right - chartArea.left, Math.abs(y2 - y1));
+        ctx.globalAlpha = 1;
+        
+        // Draw border
+        ctx.strokeStyle = colors.rangeBorder;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeRect(chartArea.left, Math.min(y1, y2), chartArea.right - chartArea.left, Math.abs(y2 - y1));
+        ctx.setLineDash([]);
+        
+        // Add "RANGE" label
+        ctx.font = "bold 10px -apple-system, BlinkMacSystemFont, sans-serif";
+        ctx.fillStyle = colors.rangeBorder;
+        ctx.fillText("RANGE", chartArea.left + 8, Math.min(y1, y2) + 14);
+        break;
+      }
+      
+      case "pivot": {
+        const y = toY(mark.price || 0);
+        const isHigherPivot = mark.role === "pivot_hh" || mark.role === "pivot_hl";
+        const pivotColor = isHigherPivot ? colors.pivotHigh : colors.pivotLow;
+        
+        // Draw marker circle
+        const markerX = chartArea.right - 60;
+        ctx.fillStyle = pivotColor;
+        ctx.beginPath();
+        ctx.arc(markerX, y, 6, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Draw label
+        ctx.font = "bold 10px -apple-system, BlinkMacSystemFont, sans-serif";
+        ctx.fillStyle = colors.labelBg;
+        const text = mark.text || "";
+        const textWidth = ctx.measureText(text).width;
+        ctx.fillRect(markerX + 10, y - 8, textWidth + 6, 16);
+        ctx.fillStyle = pivotColor;
+        ctx.fillText(text, markerX + 13, y + 4);
+        break;
+      }
+      
+      case "fakeout": {
+        const y = toY(mark.price || 0);
+        const isAbove = mark.role === "fakeout_above";
+        
+        // Draw warning marker
+        ctx.fillStyle = colors.fakeout;
+        ctx.beginPath();
+        const markerX = chartArea.left + 40;
+        // Draw triangle
+        ctx.moveTo(markerX, y - 8);
+        ctx.lineTo(markerX - 6, y + 4);
+        ctx.lineTo(markerX + 6, y + 4);
+        ctx.closePath();
+        ctx.fill();
+        
+        // Draw label
+        ctx.font = "bold 9px -apple-system, BlinkMacSystemFont, sans-serif";
+        ctx.fillStyle = colors.labelBg;
+        const text = `FAKEOUT ${isAbove ? "↑" : "↓"}`;
+        const textWidth = ctx.measureText(text).width;
+        ctx.fillRect(markerX + 10, y - 7, textWidth + 6, 14);
+        ctx.fillStyle = colors.fakeout;
+        ctx.fillText(text, markerX + 13, y + 3);
         break;
       }
     }

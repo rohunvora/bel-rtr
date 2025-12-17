@@ -22,7 +22,7 @@ import {
   ZoomIn,
   Maximize2,
 } from "lucide-react";
-import { ChartAnalysis, generateAnnotationPlan } from "@/lib/chart-analysis";
+import { ChartAnalysis, generateAnnotationPlan, Regime } from "@/lib/chart-analysis";
 import { chatWithHistory, ChatMessage } from "@/lib/gemini";
 import ReactMarkdown from "react-markdown";
 import ChartOverlayRenderer from "@/components/ChartOverlayRenderer";
@@ -131,7 +131,35 @@ const EXPLANATIONS: Record<string, { title: string; content: string }> = {
     title: "Conditional Scenario",
     content: "Not a prediction, but a conditional: 'If X happens, then Y is likely.' Helps you know what to watch for.",
   },
+  range: {
+    title: "Trading Range",
+    content: "Price is oscillating between defined support and resistance. No clear trend - waiting for a breakout in either direction.",
+  },
 };
+
+// ============================================
+// REGIME BADGE
+// ============================================
+
+const REGIME_DISPLAY: Record<Regime["type"], { label: string; color: string; bgColor: string }> = {
+  trending_up: { label: "Uptrend", color: "text-emerald-400", bgColor: "bg-emerald-500/10" },
+  trending_down: { label: "Downtrend", color: "text-rose-400", bgColor: "bg-rose-500/10" },
+  ranging: { label: "Range", color: "text-amber-400", bgColor: "bg-amber-500/10" },
+  breakout: { label: "Breakout", color: "text-cyan-400", bgColor: "bg-cyan-500/10" },
+  breakdown: { label: "Breakdown", color: "text-purple-400", bgColor: "bg-purple-500/10" },
+};
+
+function RegimeBadge({ regime }: { regime: Regime }) {
+  const display = REGIME_DISPLAY[regime.type];
+  const confidencePct = Math.round(regime.confidence * 100);
+  
+  return (
+    <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ${display.bgColor}`}>
+      <span className={`text-sm font-medium ${display.color}`}>{display.label}</span>
+      <span className="text-xs text-[#6b6c6d]">{confidencePct}%</span>
+    </div>
+  );
+}
 
 function InfoTooltip({ termKey }: { termKey: string }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -386,7 +414,9 @@ export function ChartAnalystCard({
 
 Story: ${analysis.story}
 Current context: ${analysis.currentContext}
+Regime: ${analysis.regime?.type || "unknown"} (${analysis.regime ? Math.round(analysis.regime.confidence * 100) : 0}% confidence)
 Key zones: ${analysis.keyZones.map(z => `${z.label} at $${z.price} (${z.type})`).join(", ")}
+${analysis.rangeBox ? `Range: $${analysis.rangeBox.low} - $${analysis.rangeBox.high}` : ""}
 Current price: $${analysis.currentPrice}
 Invalidation: ${analysis.invalidation}
 
@@ -561,6 +591,21 @@ Be helpful, concise, and reference your previous analysis when relevant.`;
                 </div>
               </div>
               
+              {/* Regime Badge + Range Box (if present) */}
+              <div className="flex flex-wrap items-center gap-3">
+                {analysis.regime && <RegimeBadge regime={analysis.regime} />}
+                
+                {analysis.rangeBox && (
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                    <span className="text-xs text-[#6b6c6d]">Range:</span>
+                    <span className="text-sm font-mono text-blue-400">
+                      ${analysis.rangeBox.low.toLocaleString()} — ${analysis.rangeBox.high.toLocaleString()}
+                    </span>
+                    <InfoTooltip termKey="range" />
+                  </div>
+                )}
+              </div>
+              
               {/* Annotated Chart */}
               <div className="rounded-xl border border-[#2d2e2f] overflow-hidden bg-[#161717]">
                 <div className="px-3 py-2 flex items-center justify-between border-b border-[#2d2e2f]">
@@ -672,6 +717,67 @@ Be helpful, concise, and reference your previous analysis when relevant.`;
                   <div className="space-y-2">
                     {analysis.keyZones.map((zone, i) => (
                       <ZoneRow key={i} zone={zone} index={i} />
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Pivots (if present - gated by confidence) */}
+              {analysis.pivots && analysis.pivots.points.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-xs text-[#6b6c6d] uppercase tracking-wide">
+                    Market Structure
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {analysis.pivots.points.map((pivot, i) => {
+                      const isHigher = pivot.label.startsWith("H");
+                      return (
+                        <div 
+                          key={i}
+                          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border ${
+                            isHigher 
+                              ? "bg-emerald-500/5 border-emerald-500/20" 
+                              : "bg-rose-500/5 border-rose-500/20"
+                          }`}
+                        >
+                          <span className={`text-xs font-medium ${isHigher ? "text-emerald-400" : "text-rose-400"}`}>
+                            {pivot.label}
+                          </span>
+                          <span className="text-sm font-mono text-[#9a9b9c]">
+                            ${pivot.price.toLocaleString()}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              
+              {/* Fakeouts (if present - gated by confidence) */}
+              {analysis.fakeouts && analysis.fakeouts.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-xs text-[#6b6c6d] uppercase tracking-wide flex items-center gap-2">
+                    <AlertTriangle className="w-3 h-3 text-amber-400" />
+                    Failed Breakouts
+                  </div>
+                  <div className="space-y-2">
+                    {analysis.fakeouts.map((fakeout, i) => (
+                      <div 
+                        key={i}
+                        className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/20"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-amber-400 uppercase">
+                            Fakeout {fakeout.direction}
+                          </span>
+                          <span className="text-sm font-mono text-[#e8e8e8]">
+                            ${fakeout.level.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="text-xs text-[#6b6c6d] mt-1">
+                          Price broke {fakeout.direction} this level but reversed — watch for this pattern to repeat
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </div>
