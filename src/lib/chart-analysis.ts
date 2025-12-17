@@ -631,3 +631,4 @@ export async function analyzeChartStructured(
 
 // Type alias for any code still expecting old name
 export type PatternAnalysis = ChartAnalysis;
+// trigger rebuild Wed Dec 17 16:01:23 EST 2025
