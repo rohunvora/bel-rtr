@@ -25,34 +25,33 @@ export interface KeyLevel {
   price: number;
   type: "support" | "resistance";
   label: string;
-  touchCount: number;        // How many times price reacted here
-  lastTestRecency: string;   // "recent" | "moderate" | "old"
+  touchCount: number;
+  lastTestRecency: string;
   strength: "weak" | "moderate" | "strong";
 }
 
 export interface Scenario {
   direction: "bullish" | "bearish";
-  trigger: string;           // What confirms this scenario
+  trigger: string;
   target: number;
   targetReason: string;
-  invalidation: number;      // Price where this scenario is invalid
+  invalidation: number;
   invalidationReason: string;
 }
 
 export interface ChartAnalysis {
-  // Core structure - ALWAYS present
   regime: {
     trend: "uptrend" | "downtrend" | "range" | "breakout" | "breakdown";
     strength: "weak" | "moderate" | "strong";
-    description: string;     // Max 15 words
+    description: string;
   };
   
-  keyLevels: KeyLevel[];     // Max 3 levels
+  keyLevels: KeyLevel[];
   
   pivot: {
     price: number;
     label: string;
-    significance: string;    // Why this level matters
+    significance: string;
   };
   
   scenarios: {
@@ -60,30 +59,45 @@ export interface ChartAnalysis {
     bearish: Scenario;
   };
   
-  // Confidence scoring
   confidence: {
     overall: "low" | "medium" | "high";
-    reasons: string[];       // What contributes to confidence
+    reasons: string[];
   };
   
-  // Direct answer to user
-  summary: string;           // 2-3 sentences answering their question
-  
-  // Current state
+  summary: string;
   currentPrice: number;
-  priceLocation: string;     // "at support", "mid-range", "testing resistance"
-  
-  // Meta
-  symbol?: string;           // Auto-detected if possible
-  timeframe?: string;        // Auto-detected if possible
-  analyzedAt: string;        // ISO timestamp
+  priceLocation: string;
+  symbol?: string;
+  timeframe?: string;
+  analyzedAt: string;
   
   success: boolean;
   error?: string;
 }
 
 // ============================================
-// PROMPTS - Enforced structure
+// ANNOTATION PLAN - For deterministic rendering
+// ============================================
+
+export interface AnnotationMark {
+  type: "zone" | "line" | "arrow" | "label" | "circle";
+  role: "support" | "resistance" | "pivot" | "target" | "invalidation" | "bull_path" | "bear_path" | "current_price";
+  price?: number;
+  priceHigh?: number;
+  priceLow?: number;
+  text?: string;
+  style?: "solid" | "dashed";
+  opacity?: number;
+}
+
+export interface AnnotationPlan {
+  theme: "dark" | "light";
+  story: string; // One sentence describing the chart story
+  marks: AnnotationMark[];
+}
+
+// ============================================
+// PROMPTS
 // ============================================
 
 const CHART_ANALYSIS_PROMPT = `You are a chart analyst. Analyze this chart with STRICT structure.
@@ -172,6 +186,78 @@ INVALIDATION IS REQUIRED:
 - This is the "you were wrong" price
 - Be specific, not vague`;
 
+// System instruction for story-first chart annotation
+const ANNOTATION_SYSTEM_INSTRUCTION = `You are a professional technical-analysis chart markup artist.
+
+Your job is to edit a candlestick chart screenshot by overlaying clean, high-signal annotations that help a BEGINNER understand:
+(1) where the important decision zones are,
+(2) what the market is doing right now (trend/range),
+(3) what could happen next in 2 simple scenarios.
+
+DO NOT redraw the candles.
+DO NOT distort the chart.
+Only overlay shapes on top of the existing image.
+
+PRIMARY OUTPUT GOAL
+Create an annotated chart that feels like a high-quality TradingView post:
+- visually clear,
+- minimal but "story-like,"
+- immediately useful.
+
+HARD RULES (QUALITY + TRUST)
+1) Never invent numeric prices. Use only prices from the provided annotation brief or clearly visible on the chart axis.
+2) If a level is provided but the axis text is hard to read, convert the level into a wider ZONE (band) so small placement error doesn't ruin the meaning.
+3) Keep the number of marks low. Default max: 9 total marks (zones/lines/arrows/text combined).
+4) Do not add indicators. Use only:
+   - support/resistance zones,
+   - pivot line,
+   - ONE structure tool (trendline OR range box) if obvious,
+   - ONE projection path (arrow) showing conditional scenarios.
+5) No "BUY / SELL" commands. Label scenarios as "Bull case / Bear case" conditionally.
+
+VISUAL LANGUAGE (WHAT TO DRAW)
+You have 6 primitives. Use them intentionally:
+A) ZONE (rectangle band, semi-transparent) for support/resistance areas
+B) LINE (thin) for pivot or a single key level when precision is clear
+C) TRENDLINE (one only) or RANGE BOX (one only) if the chart structure is clean
+D) ARROW PATH (one main arrow; optional dashed alternative) to show "if X then Y"
+E) CIRCLES (optional, up to 3) to highlight key touches/rejections
+F) LABEL TAGS (minimal text) placed near the right edge inside the plot area:
+   examples: "Support", "Resistance", "Pivot", "Target"
+
+STYLE RULES (MAKE IT LOOK GOOD)
+- Match the chart's theme: on dark charts use muted neon colors (cyan, green, red/pink) with soft opacity; on light charts use slightly darker strokes.
+- Zones must be translucent (not opaque). Candles must remain visible through them.
+- Lines must be consistent thickness (2-3 px).
+- Avoid drawing over the price axis labels and the chart title bar.
+- Prefer right-side tags and short words. No paragraphs on the image.
+- Arrow paths should be smooth and readable, not messy.
+
+DECISION LOGIC
+1) Determine regime from the visible structure:
+   - Uptrend if higher highs/higher lows dominate
+   - Downtrend if lower highs/lower lows dominate
+   - Range if price oscillates between two bands
+2) Use the provided levels/pivot as anchors, but adapt presentation:
+   - If multiple wicks cluster around a level, make it a ZONE instead of a single line
+3) Pick ONE story:
+   - "Trend continuation to next resistance"
+   - "Range with breakout/breakdown"
+   - "Pullback into support then bounce"
+   - "Rejection from resistance then retrace"
+4) Show TWO scenarios with minimal ink:
+   - Bull case: what must hold/break + the next magnet level
+   - Bear case: what must fail + the next magnet level
+
+PLACEMENT RULES
+- Support zones go below current price; resistance zones above
+- Pivot is the "decision line/zone" closest to current price
+- Projection arrows start near current price and point toward the next level/zone
+- If you can't place something confidently, do less, not more
+
+OUTPUT
+Return a single edited image with overlays applied.`;
+
 // ============================================
 // ANALYSIS FUNCTION
 // ============================================
@@ -218,10 +304,9 @@ export async function analyzeChart(
       const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
       const parsed = JSON.parse(cleaned);
       
-      // Validate and enforce constraints
       const analysis: ChartAnalysis = {
         regime: parsed.regime || { trend: "range", strength: "moderate", description: "Unable to determine trend" },
-        keyLevels: (parsed.keyLevels || []).slice(0, 3), // Enforce max 3
+        keyLevels: (parsed.keyLevels || []).slice(0, 3),
         pivot: parsed.pivot || { price: 0, label: "Unknown", significance: "Unable to identify pivot" },
         scenarios: {
           bullish: parsed.scenarios?.bullish || createEmptyScenario("bullish"),
@@ -237,7 +322,6 @@ export async function analyzeChart(
         success: true,
       };
 
-      // QA: Ensure invalidation exists
       if (!analysis.scenarios.bullish.invalidation) {
         analysis.confidence.overall = "low";
         analysis.confidence.reasons.push("Missing bullish invalidation");
@@ -260,7 +344,75 @@ export async function analyzeChart(
 }
 
 // ============================================
-// ANNOTATION FUNCTION - Using Gemini 2.0 Flash native image generation
+// BUILD ANNOTATION BRIEF (JSON format for model)
+// ============================================
+
+function buildAnnotationBrief(analysis: ChartAnalysis): object {
+  // Convert strength to numeric (0-1)
+  const strengthToNumber = (s: string): number => {
+    if (s === "strong") return 0.9;
+    if (s === "moderate") return 0.6;
+    return 0.3;
+  };
+
+  // Format price in multiple ways so model can match axis
+  const formatPrice = (p: number): string => {
+    if (p >= 1000) {
+      return `${p} / ${p.toLocaleString()} / ${(p/1000).toFixed(1)}K`;
+    }
+    return `${p} / ${p.toFixed(2)}`;
+  };
+
+  const levels = analysis.keyLevels.map(level => ({
+    role: level.type,
+    price: level.price,
+    price_formatted: formatPrice(level.price),
+    strength: strengthToNumber(level.strength),
+    touches: level.touchCount,
+  }));
+
+  return {
+    mode: "simple_story",
+    user_skill: "beginner",
+    goal: "clarity_and_next_steps",
+    max_marks: 9,
+    must_use: ["zones_for_levels", "pivot", "scenario_arrows"],
+    nice_to_have: ["one_structure_tool", "minimal_labels"],
+    
+    regime: analysis.regime.trend,
+    regime_strength: analysis.regime.strength,
+    
+    levels,
+    
+    pivot: {
+      price: analysis.pivot.price,
+      price_formatted: formatPrice(analysis.pivot.price),
+      label: analysis.pivot.label,
+    },
+    
+    current_price: analysis.currentPrice,
+    current_price_formatted: formatPrice(analysis.currentPrice),
+    
+    scenarios: {
+      bull: {
+        target: analysis.scenarios.bullish.target,
+        target_formatted: formatPrice(analysis.scenarios.bullish.target),
+        invalidation: analysis.scenarios.bullish.invalidation,
+      },
+      bear: {
+        target: analysis.scenarios.bearish.target,
+        target_formatted: formatPrice(analysis.scenarios.bearish.target),
+        invalidation: analysis.scenarios.bearish.invalidation,
+      },
+    },
+    
+    bias_hint: analysis.regime.trend === "uptrend" ? "bullish" : 
+               analysis.regime.trend === "downtrend" ? "bearish" : "neutral",
+  };
+}
+
+// ============================================
+// ANNOTATION FUNCTION - Story-first approach
 // ============================================
 
 export async function annotateChart(
@@ -270,38 +422,38 @@ export async function annotateChart(
   const client = getAI();
   if (!client) return null;
 
-  // Build a very simple, minimal prompt to reduce hallucination
-  const levels: string[] = [];
-  
-  for (const level of analysis.keyLevels.slice(0, 3)) {
-    const color = level.type === "support" ? "green" : "red";
-    levels.push(`${color} line at $${level.price.toLocaleString()}`);
-  }
-  
-  if (analysis.pivot.price > 0) {
-    levels.push(`blue line at $${analysis.pivot.price.toLocaleString()}`);
-  }
+  // Build the annotation brief
+  const brief = buildAnnotationBrief(analysis);
 
-  // Very minimal prompt - edit the image, don't generate new
-  const prompt = `Edit this trading chart image by adding horizontal price lines.
+  // User prompt with the brief
+  const userPrompt = `Edit this chart image by adding professional, beginner-friendly TA markup.
 
-ADD THESE LINES:
-${levels.join("\n")}
+Use this annotation brief as ground truth (do not invent numbers):
+${JSON.stringify(brief, null, 2)}
 
-RULES:
-- Draw thin horizontal lines at each price level
-- Green lines for support, red for resistance, blue for pivot
-- Keep the original chart EXACTLY as is
-- Do NOT add text, labels, or annotations
-- Do NOT redraw or modify the candlesticks
-- Just overlay the lines on top`;
+Requirements:
+- Convert levels into ZONES (semi-transparent bands) - zones are more forgiving than precise lines
+- Add the pivot as a horizontal line or thin zone
+- Add minimal label tags near the right edge: "Support", "Resistance", "Pivot"
+- Add ONE clean arrow showing the most likely scenario path
+- Optionally add a dashed arrow for the alternative scenario
+- Keep it clean (max 9 marks total). Do not clutter.
+- Keep all candles unchanged; overlay only.
+- Use colors: green/cyan for support & bullish, red/pink for resistance & bearish, blue/white for pivot`;
 
-  // Try Gemini 3 Pro (Nano Banana) - best for image editing
+  // Combine system instruction with user prompt
+  const fullPrompt = `${ANNOTATION_SYSTEM_INSTRUCTION}
+
+---
+
+USER REQUEST:
+${userPrompt}`;
+
   try {
-    console.log("Attempting annotation with gemini-3-pro-image-preview...");
+    console.log("Attempting story-first annotation with gemini-2.0-flash-preview-image-generation...");
     
     const response = await client.models.generateContent({
-      model: "gemini-3-pro-image-preview",
+      model: "gemini-2.0-flash-preview-image-generation",
       contents: [
         {
           role: "user",
@@ -312,7 +464,7 @@ RULES:
                 data: imageBase64,
               },
             },
-            { text: prompt },
+            { text: fullPrompt },
           ],
         },
       ],
@@ -325,18 +477,151 @@ RULES:
     
     for (const part of parts) {
       if (part.inlineData?.data) {
-        console.log("Successfully annotated chart");
+        console.log("Successfully created story-first annotation");
         return part.inlineData.data;
       }
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    console.log("Annotation failed:", errorMessage);
+    console.log("Story-first annotation failed, trying gemini-3-pro-image-preview:", errorMessage);
+    
+    // Fallback to gemini-3-pro
+    try {
+      const response = await client.models.generateContent({
+        model: "gemini-3-pro-image-preview",
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                inlineData: {
+                  mimeType: "image/png",
+                  data: imageBase64,
+                },
+              },
+              { text: fullPrompt },
+            ],
+          },
+        ],
+        config: {
+          responseModalities: ["IMAGE"],
+        },
+      });
+
+      const parts = response.candidates?.[0]?.content?.parts || [];
+      
+      for (const part of parts) {
+        if (part.inlineData?.data) {
+          console.log("Successfully created annotation with gemini-3-pro");
+          return part.inlineData.data;
+        }
+      }
+    } catch (fallbackError) {
+      console.log("Fallback annotation also failed:", fallbackError);
+    }
   }
 
-  // If annotation fails, return null - we'll just show the original
-  console.log("Annotation not available, using original chart");
+  console.log("All annotation attempts failed");
   return null;
+}
+
+// ============================================
+// GENERATE ANNOTATION PLAN (for canvas rendering)
+// ============================================
+
+export function generateAnnotationPlan(analysis: ChartAnalysis): AnnotationPlan {
+  const marks: AnnotationMark[] = [];
+  
+  // Determine theme (assume dark for now, could detect from image)
+  const theme: "dark" | "light" = "dark";
+  
+  // Add support/resistance zones
+  for (const level of analysis.keyLevels) {
+    // Create zone (band around the price)
+    const bandSize = level.price * 0.005; // 0.5% band
+    marks.push({
+      type: "zone",
+      role: level.type,
+      priceHigh: level.price + bandSize,
+      priceLow: level.price - bandSize,
+      opacity: level.strength === "strong" ? 0.25 : level.strength === "moderate" ? 0.18 : 0.12,
+    });
+    
+    // Add label
+    marks.push({
+      type: "label",
+      role: level.type,
+      price: level.price,
+      text: level.type === "support" ? "Support" : "Resistance",
+    });
+  }
+  
+  // Add pivot line
+  if (analysis.pivot.price > 0) {
+    marks.push({
+      type: "line",
+      role: "pivot",
+      price: analysis.pivot.price,
+      style: "dashed",
+    });
+    marks.push({
+      type: "label",
+      role: "pivot",
+      price: analysis.pivot.price,
+      text: "Pivot",
+    });
+  }
+  
+  // Add current price marker
+  if (analysis.currentPrice > 0) {
+    marks.push({
+      type: "circle",
+      role: "current_price",
+      price: analysis.currentPrice,
+    });
+  }
+  
+  // Add bull path arrow
+  if (analysis.scenarios.bullish.target > 0) {
+    marks.push({
+      type: "arrow",
+      role: "bull_path",
+      price: analysis.currentPrice,
+      priceHigh: analysis.scenarios.bullish.target,
+      style: "solid",
+    });
+  }
+  
+  // Add bear path arrow (dashed)
+  if (analysis.scenarios.bearish.target > 0) {
+    marks.push({
+      type: "arrow",
+      role: "bear_path",
+      price: analysis.currentPrice,
+      priceLow: analysis.scenarios.bearish.target,
+      style: "dashed",
+    });
+  }
+  
+  // Build story
+  let story = "";
+  if (analysis.regime.trend === "uptrend") {
+    story = "Uptrend with potential continuation to resistance";
+  } else if (analysis.regime.trend === "downtrend") {
+    story = "Downtrend with potential continuation to support";
+  } else if (analysis.regime.trend === "range") {
+    story = "Range-bound between support and resistance";
+  } else if (analysis.regime.trend === "breakout") {
+    story = "Breaking out above resistance";
+  } else {
+    story = "Breaking down below support";
+  }
+  
+  return {
+    theme,
+    story,
+    marks,
+  };
 }
 
 // ============================================
@@ -373,10 +658,7 @@ function createEmptyScenario(direction: "bullish" | "bearish"): Scenario {
   };
 }
 
-// ============================================
-// LEGACY EXPORTS (for backwards compatibility during transition)
-// ============================================
-
+// Legacy exports
 export async function analyzeChartStructured(
   imageBase64: string,
   userPrompt?: string

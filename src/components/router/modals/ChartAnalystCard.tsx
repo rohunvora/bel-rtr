@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { 
   X,
   Eye,
@@ -30,10 +30,12 @@ import {
   ZoomIn,
   Maximize2,
   Share2,
+  Layers,
 } from "lucide-react";
-import { ChartAnalysis } from "@/lib/chart-analysis";
+import { ChartAnalysis, generateAnnotationPlan } from "@/lib/chart-analysis";
 import { chatWithHistory, ChatMessage } from "@/lib/gemini";
 import ReactMarkdown from "react-markdown";
+import ChartOverlayRenderer from "@/components/ChartOverlayRenderer";
 
 interface ChartAnalystCardProps {
   analysis: ChartAnalysis;
@@ -433,7 +435,8 @@ export function ChartAnalystCard({
   onClose,
   onSave,
 }: ChartAnalystCardProps) {
-  const [viewMode, setViewMode] = useState<"annotated" | "original">("original"); // Default to original since annotation often fails
+  // Default to canvas view (deterministic rendering)
+  const [viewMode, setViewMode] = useState<"canvas" | "annotated" | "original">("canvas");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [chatImage, setChatImage] = useState<string | null>(null);
@@ -441,12 +444,30 @@ export function ChartAnalystCard({
   const [saved, setSaved] = useState(false);
   const [showZoom, setShowZoom] = useState(false);
   const [copiedImage, setCopiedImage] = useState(false);
+  const [canvasRenderedImage, setCanvasRenderedImage] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Use annotated if ready, otherwise original
-  const displayChart = viewMode === "annotated" && annotatedChart ? annotatedChart : originalChart;
+  // Generate annotation plan from analysis (memoized)
+  const annotationPlan = useMemo(() => generateAnnotationPlan(analysis), [analysis]);
+  
+  // Determine display chart based on view mode
+  const displayChart = useMemo(() => {
+    if (viewMode === "canvas" && canvasRenderedImage) {
+      // Extract base64 from data URL
+      return canvasRenderedImage.replace(/^data:image\/png;base64,/, "");
+    }
+    if (viewMode === "annotated" && annotatedChart) {
+      return annotatedChart;
+    }
+    return originalChart;
+  }, [viewMode, canvasRenderedImage, annotatedChart, originalChart]);
+  
+  // Handle canvas render completion
+  const handleCanvasRenderComplete = useCallback((dataUrl: string) => {
+    setCanvasRenderedImage(dataUrl);
+  }, []);
 
   // Auto-scroll
   useEffect(() => {
@@ -641,34 +662,51 @@ Be helpful, concise, and reference your previous analysis when relevant. If aske
               <div className="rounded-xl border border-[#2d2e2f] overflow-hidden bg-[#161717]">
                 <div className="px-3 py-2 flex items-center justify-between border-b border-[#2d2e2f]">
                   <div className="flex items-center gap-1">
+                    {/* Canvas view (deterministic) - always available */}
+                    <button
+                      onClick={() => setViewMode("canvas")}
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                        viewMode === "canvas"
+                          ? "bg-cyan-500/20 text-cyan-400"
+                          : "text-[#6b6c6d] hover:text-[#9a9b9c]"
+                      }`}
+                      title="Precise overlay rendering"
+                    >
+                      <Layers className="w-3 h-3" />
+                      Overlay
+                    </button>
+                    
+                    {/* AI annotated view - only if available */}
                     {annotatedChart && (
-                      <>
-                        <button
-                          onClick={() => setViewMode("annotated")}
-                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
-                            viewMode === "annotated"
-                              ? "bg-cyan-500/20 text-cyan-400"
-                              : "text-[#6b6c6d] hover:text-[#9a9b9c]"
-                          }`}
-                        >
-                          <Eye className="w-3 h-3" />
-                          Annotated
-                        </button>
-                        <button
-                          onClick={() => setViewMode("original")}
-                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
-                            viewMode === "original" ? "bg-[#242526] text-[#e8e8e8]" : "text-[#6b6c6d] hover:text-[#9a9b9c]"
-                          }`}
-                        >
-                          <EyeOff className="w-3 h-3" />
-                          Original
-                        </button>
-                      </>
+                      <button
+                        onClick={() => setViewMode("annotated")}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                          viewMode === "annotated"
+                            ? "bg-purple-500/20 text-purple-400"
+                            : "text-[#6b6c6d] hover:text-[#9a9b9c]"
+                        }`}
+                        title="AI-generated annotation"
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        AI
+                      </button>
                     )}
+                    
+                    {/* Original view */}
+                    <button
+                      onClick={() => setViewMode("original")}
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                        viewMode === "original" ? "bg-[#242526] text-[#e8e8e8]" : "text-[#6b6c6d] hover:text-[#9a9b9c]"
+                      }`}
+                    >
+                      <EyeOff className="w-3 h-3" />
+                      Original
+                    </button>
+                    
                     {annotationStatus === "loading" && (
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-cyan-400/60">
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-purple-400/60">
                         <Loader2 className="w-3 h-3 animate-spin" />
-                        Drawing levels...
+                        AI drawing...
                       </div>
                     )}
                   </div>
@@ -699,23 +737,41 @@ Be helpful, concise, and reference your previous analysis when relevant. If aske
                   </div>
                 </div>
                 
-                {/* Chart image - clickable to zoom */}
+                {/* Chart display */}
                 <div 
                   className="relative cursor-zoom-in group"
                   onClick={() => setShowZoom(true)}
                 >
-                  <img 
-                    src={`data:image/png;base64,${displayChart}`} 
-                    alt="Chart" 
-                    className="w-full"
-                  />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                  {viewMode === "canvas" && !canvasRenderedImage ? (
+                    // Render canvas overlay directly
+                    <ChartOverlayRenderer
+                      imageBase64={originalChart}
+                      plan={annotationPlan}
+                      analysis={analysis}
+                      onRenderComplete={handleCanvasRenderComplete}
+                    />
+                  ) : (
+                    // Show static image (original, AI annotated, or canvas-rendered)
+                    <img 
+                      src={`data:image/png;base64,${displayChart}`} 
+                      alt="Chart" 
+                      className="w-full"
+                    />
+                  )}
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100 pointer-events-none">
                     <div className="bg-black/60 rounded-lg px-3 py-2 flex items-center gap-2 text-white text-sm">
                       <ZoomIn className="w-4 h-4" />
                       Click to zoom
                     </div>
                   </div>
                 </div>
+                
+                {/* Story hint for canvas mode */}
+                {viewMode === "canvas" && annotationPlan.story && (
+                  <div className="px-3 py-2 border-t border-[#2d2e2f] text-xs text-[#9a9b9c]">
+                    <span className="text-cyan-400">Story:</span> {annotationPlan.story}
+                  </div>
+                )}
               </div>
               
               {/* Key Levels */}
