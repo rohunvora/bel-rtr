@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Belief Router",
-  description: "The fastest way to express and manage crypto trades",
+  title: "Chart Analyst",
+  description: "Structured chart analysis with verified levels, required invalidation, and consistent output",
 };
 
 export default function RootLayout({

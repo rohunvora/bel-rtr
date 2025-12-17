@@ -24,8 +24,22 @@ export interface GeminiResponse {
   error?: string;
 }
 
+// Content part type for Gemini API
+interface ContentPart {
+  text?: string;
+  inlineData?: {
+    mimeType: string;
+    data: string;
+  };
+}
+
+interface ContentMessage {
+  role: string;
+  parts: ContentPart[];
+}
+
 // Analyze and draw on chart using Nano Banana (image generation model)
-export async function analyzeChart(imageBase64: string, prompt?: string): Promise<GeminiResponse> {
+export async function analyzeChartImage(imageBase64: string, prompt?: string): Promise<GeminiResponse> {
   const client = getAI();
   if (!client) {
     return { text: "", success: false, error: "API key not configured" };
@@ -37,7 +51,7 @@ export async function analyzeChart(imageBase64: string, prompt?: string): Promis
 
     // Use Gemini 3 Pro Image Preview (Nano Banana Pro) - latest and greatest
     const response = await client.models.generateContent({
-      model: "gemini-3-pro-image-preview",
+      model: "gemini-2.0-flash",
       contents: [
         {
           role: "user",
@@ -73,8 +87,9 @@ export async function analyzeChart(imageBase64: string, prompt?: string): Promis
     }
 
     return { text, generatedImage, success: true };
-  } catch (error: any) {
-    console.error("Gemini image API error:", error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error("Gemini image API error:", errorMessage);
     
     // Fallback to text-only analysis
     return fallbackTextAnalysis(imageBase64, prompt);
@@ -126,12 +141,13 @@ Be specific with price levels.`;
     }
 
     return { text, success: true };
-  } catch (error: any) {
-    console.error("Fallback analysis error:", error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Failed to analyze chart";
+    console.error("Fallback analysis error:", errorMessage);
     return { 
       text: "", 
       success: false, 
-      error: error.message || "Failed to analyze chart" 
+      error: errorMessage
     };
   }
 }
@@ -155,7 +171,7 @@ export async function chatWithHistory(
 
   try {
     // Build contents array with conversation history
-    const contents: any[] = [];
+    const contents: ContentMessage[] = [];
     
     // Add system context as first user message if provided
     if (systemContext) {
@@ -171,7 +187,7 @@ export async function chatWithHistory(
     
     // Add conversation history
     for (const msg of messages) {
-      const parts: any[] = [];
+      const parts: ContentPart[] = [];
       
       if (msg.image) {
         parts.push({
@@ -205,12 +221,13 @@ export async function chatWithHistory(
     }
 
     return { text, success: true };
-  } catch (error: any) {
-    console.error("Gemini chat error:", error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Failed to get response";
+    console.error("Gemini chat error:", errorMessage);
     return { 
       text: "", 
       success: false, 
-      error: error.message || "Failed to get response" 
+      error: errorMessage
     };
   }
 }
