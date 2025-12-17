@@ -172,21 +172,6 @@ INVALIDATION IS REQUIRED:
 - This is the "you were wrong" price
 - Be specific, not vague`;
 
-const ANNOTATION_PROMPT = `Annotate this trading chart. Draw ONLY these elements:
-
-LEVELS TO DRAW:
-{LEVELS}
-
-RULES (STRICT):
-1. Maximum 6 drawn objects total
-2. Use thin lines (2px)
-3. Colors: GREEN for support, RED for resistance, BLUE for pivot
-4. Small labels, don't clutter
-5. Keep original chart clearly visible
-6. Professional style like TradingView
-
-Return the annotated chart image.`;
-
 // ============================================
 // ANALYSIS FUNCTION
 // ============================================
@@ -275,7 +260,7 @@ export async function analyzeChart(
 }
 
 // ============================================
-// ANNOTATION FUNCTION
+// ANNOTATION FUNCTION - Using Gemini 2.0 Flash native image generation
 // ============================================
 
 export async function annotateChart(
@@ -285,84 +270,69 @@ export async function annotateChart(
   const client = getAI();
   if (!client) return null;
 
-  // Build level instructions (max 6 objects)
-  const levelInstructions: string[] = [];
+  // Build a very simple, minimal prompt to reduce hallucination
+  const levels: string[] = [];
   
-  // Add key levels (max 3)
   for (const level of analysis.keyLevels.slice(0, 3)) {
-    const color = level.type === "support" ? "GREEN" : "RED";
-    levelInstructions.push(
-      `- ${color} horizontal line at $${level.price.toLocaleString()} labeled "${level.label}"`
-    );
+    const color = level.type === "support" ? "green" : "red";
+    levels.push(`${color} line at $${level.price.toLocaleString()}`);
   }
   
-  // Add pivot (1)
   if (analysis.pivot.price > 0) {
-    levelInstructions.push(
-      `- BLUE horizontal line at $${analysis.pivot.price.toLocaleString()} labeled "Pivot"`
-    );
-  }
-  
-  // Add scenario targets (max 2)
-  if (analysis.scenarios.bullish.target > 0) {
-    levelInstructions.push(
-      `- GREEN dashed line at $${analysis.scenarios.bullish.target.toLocaleString()} labeled "Bull target"`
-    );
-  }
-  if (analysis.scenarios.bearish.target > 0) {
-    levelInstructions.push(
-      `- RED dashed line at $${analysis.scenarios.bearish.target.toLocaleString()} labeled "Bear target"`
-    );
+    levels.push(`blue line at $${analysis.pivot.price.toLocaleString()}`);
   }
 
-  const prompt = ANNOTATION_PROMPT.replace("{LEVELS}", levelInstructions.join("\n") || "Draw key support and resistance levels");
+  // Very minimal prompt - just draw lines, nothing else
+  const prompt = `Draw horizontal lines on this chart:
+${levels.join("\n")}
 
-  const models = [
-    "gemini-2.0-flash-exp-image-generation",
-    "gemini-2.0-flash",
-  ];
+CRITICAL RULES:
+- ONLY draw simple horizontal lines at the specified prices
+- DO NOT add any text or labels
+- DO NOT modify the chart in any other way
+- Keep lines thin and semi-transparent
+- Preserve the original chart exactly as-is underneath`;
 
-  for (const model of models) {
-    try {
-      console.log(`Attempting annotation with ${model}...`);
-      
-      const response = await client.models.generateContent({
-        model,
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                inlineData: {
-                  mimeType: "image/png",
-                  data: imageBase64,
-                },
+  // Try the native image generation model
+  try {
+    console.log("Attempting annotation with gemini-2.0-flash-preview-image-generation...");
+    
+    const response = await client.models.generateContent({
+      model: "gemini-2.0-flash-preview-image-generation",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              inlineData: {
+                mimeType: "image/png",
+                data: imageBase64,
               },
-              { text: prompt },
-            ],
-          },
-        ],
-        config: {
-          responseModalities: ["TEXT", "IMAGE"],
+            },
+            { text: prompt },
+          ],
         },
-      });
+      ],
+      config: {
+        responseModalities: ["IMAGE"],
+      },
+    });
 
-      const parts = response.candidates?.[0]?.content?.parts || [];
-      
-      for (const part of parts) {
-        if (part.inlineData?.data) {
-          console.log(`Successfully annotated with ${model}`);
-          return part.inlineData.data;
-        }
+    const parts = response.candidates?.[0]?.content?.parts || [];
+    
+    for (const part of parts) {
+      if (part.inlineData?.data) {
+        console.log("Successfully annotated chart");
+        return part.inlineData.data;
       }
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      console.log(`Model ${model} failed:`, errorMessage);
-      continue;
     }
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    console.log("Annotation failed:", errorMessage);
   }
 
-  console.log("All annotation models failed");
+  // If annotation fails, return null - we'll just show the original
+  console.log("Annotation not available, using original chart");
   return null;
 }
 
