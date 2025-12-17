@@ -15,7 +15,7 @@ import {
   HelpCircle,
 } from "lucide-react";
 import { ChartAnalystCard } from "./modals/ChartAnalystCard";
-import { analyzeChart, annotateChart, type ChartRead } from "@/lib/chart-engine";
+import { analyzeChart, annotateChart, ChartAnalysis } from "@/lib/chart-analysis";
 import { fileToBase64 } from "@/lib/gemini";
 import { ToastContainer, ToastMessage } from "@/components/Toast";
 import { useOnboarding, useAnalysisHistory, SavedAnalysis } from "@/lib/use-persisted-state";
@@ -27,7 +27,7 @@ import { useOnboarding, useAnalysisHistory, SavedAnalysis } from "@/lib/use-pers
 type ViewState = 
   | { type: "home" }
   | { type: "analyzing"; prompt: string }
-  | { type: "result"; analysis: ChartRead; originalChart: string; annotatedChart: string | null; annotationStatus: "loading" | "ready" | "failed"; prompt: string };
+  | { type: "result"; analysis: ChartAnalysis; originalChart: string; annotatedChart: string | null; annotationStatus: "loading" | "ready" | "failed"; prompt: string };
 
 // ============================================
 // SUB-COMPONENTS
@@ -63,15 +63,15 @@ function RecentAnalysisCard({
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-sm text-[#e8e8e8] truncate">
-            {saved.analysis.story.slice(0, 50)}...
+            {saved.analysis.symbol || "Chart"} {saved.analysis.timeframe && `• ${saved.analysis.timeframe}`}
           </div>
           <div className="text-xs text-[#6b6c6d] flex items-center gap-2">
             <span className={`capitalize ${
-              saved.analysis.regime === "uptrend" ? "text-emerald-400" :
-              saved.analysis.regime === "downtrend" ? "text-rose-400" :
+              saved.analysis.regime.trend === "uptrend" ? "text-emerald-400" :
+              saved.analysis.regime.trend === "downtrend" ? "text-rose-400" :
               "text-amber-400"
             }`}>
-              {saved.analysis.regime}
+              {saved.analysis.regime.trend}
             </span>
             <span>•</span>
             <span>{timeSince}</span>
@@ -191,10 +191,10 @@ export function RouterPage() {
 
     try {
       // Step 1: Get structured analysis
-      const result = await analyzeChart(imageBase64, prompt || undefined);
+      const analysis = await analyzeChart(imageBase64, prompt || undefined);
       
-      if (!result.success) {
-        addToast("error", "Analysis failed", result.error);
+      if (!analysis.success) {
+        addToast("error", "Analysis failed", analysis.error);
         setViewState({ type: "home" });
         return;
       }
@@ -202,7 +202,7 @@ export function RouterPage() {
       // Show result immediately, annotation loading in background
       setViewState({ 
         type: "result", 
-        analysis: result.data,
+        analysis,
         originalChart: imageBase64,
         annotatedChart: null,
         annotationStatus: "loading",
@@ -211,7 +211,7 @@ export function RouterPage() {
 
       // Step 2: Generate annotated chart in background
       try {
-        const annotated = await annotateChart(imageBase64, result.data);
+        const annotated = await annotateChart(imageBase64, analysis);
         
         setViewState((prev) => {
           if (prev.type === "result") {
@@ -251,7 +251,7 @@ export function RouterPage() {
     }
   };
 
-  const handleSaveAnalysis = useCallback((analysis: ChartRead) => {
+  const handleSaveAnalysis = useCallback((analysis: ChartAnalysis) => {
     if (viewState.type === "result") {
       saveAnalysis(analysis, viewState.originalChart, viewState.prompt);
       addToast("success", "Analysis saved", "View it in your history");
@@ -275,7 +275,7 @@ export function RouterPage() {
       <header className="h-14 border-b border-[#2d2e2f] flex items-center justify-between px-6 flex-shrink-0">
         <div className="flex items-center gap-3">
           <BarChart3 className="w-5 h-5 text-cyan-400" />
-          <span className="text-[#e8e8e8] font-medium">Chart Read</span>
+          <span className="text-[#e8e8e8] font-medium">Chart Analyst</span>
         </div>
         <div className="flex items-center gap-2">
           <button className="p-2 hover:bg-[#242526] rounded-lg transition-colors">
@@ -294,10 +294,10 @@ export function RouterPage() {
             {/* Hero */}
             <div className="text-center mb-8">
               <h1 className="text-3xl font-semibold text-[#e8e8e8] mb-3">
-                Read any chart
+                Analyze any chart
               </h1>
               <p className="text-[#6b6c6d] text-lg">
-                Paste a screenshot. Get the story, key levels, and what to watch.
+                Paste a screenshot. Get structured levels, scenarios, and invalidation.
               </p>
             </div>
 
@@ -376,7 +376,7 @@ export function RouterPage() {
                       className="w-full py-3 bg-cyan-500 hover:bg-cyan-400 text-white font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
                     >
                       <Sparkles className="w-4 h-4" />
-                      Read Chart
+                      Analyze Chart
                     </button>
                   </div>
                 ) : (
@@ -400,7 +400,7 @@ export function RouterPage() {
               <div>
                 <div className="flex items-center gap-2 mb-3">
                   <Clock className="w-4 h-4 text-[#6b6c6d]" />
-                  <span className="text-sm text-[#6b6c6d]">Recent reads</span>
+                  <span className="text-sm text-[#6b6c6d]">Recent analyses</span>
                 </div>
                 <div className="space-y-2">
                   {history.slice(0, 5).map((saved) => (
@@ -419,9 +419,9 @@ export function RouterPage() {
             {history.length === 0 && (
               <div className="grid grid-cols-3 gap-4 mt-12">
                 {[
-                  { icon: BarChart3, title: "The Story", desc: "What happened on this chart" },
-                  { icon: Sparkles, title: "Key Levels", desc: "Support, resistance, pivot" },
-                  { icon: Clock, title: "What to Watch", desc: "Conditionals, not predictions" },
+                  { icon: BarChart3, title: "Structured Output", desc: "Regime, levels, scenarios" },
+                  { icon: Sparkles, title: "Required Invalidation", desc: "Always know when you're wrong" },
+                  { icon: Clock, title: "History Tracking", desc: "Compare analyses over time" },
                 ].map((feature, i) => (
                   <div key={i} className="text-center p-4">
                     <div className="w-10 h-10 mx-auto mb-2 rounded-xl bg-[#1e1f20] flex items-center justify-center">
@@ -445,13 +445,13 @@ export function RouterPage() {
                     <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
                   </div>
                 </div>
-                <div className="text-xl text-[#e8e8e8] font-medium mb-2">Reading chart...</div>
+                <div className="text-xl text-[#e8e8e8] font-medium mb-2">Analyzing chart...</div>
                 <div className="text-sm text-[#6b6c6d]">
-                  Identifying the story, levels, and what to watch
+                  Identifying regime, levels, and scenarios
                 </div>
                 
                 <div className="mt-8 space-y-2 text-left w-full max-w-xs">
-                  {["Reading price action", "Finding key levels", "Determining what to watch"].map((step, i) => (
+                  {["Reading price action", "Counting level touches", "Mapping scenarios"].map((step, i) => (
                     <div key={i} className="flex items-center gap-3 text-sm">
                       <div className="w-5 h-5 rounded-full bg-cyan-500/20 flex items-center justify-center">
                         <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" style={{ animationDelay: `${i * 200}ms` }} />
@@ -484,7 +484,7 @@ export function RouterPage() {
                 className="inline-flex items-center gap-2 px-6 py-3 bg-[#1e1f20] hover:bg-[#242526] border border-[#2d2e2f] rounded-xl text-[#e8e8e8] transition-colors"
               >
                 <ArrowUp className="w-4 h-4" />
-                Read another chart
+                Analyze another chart
               </button>
             </div>
           </div>
@@ -493,7 +493,7 @@ export function RouterPage() {
 
       {/* Footer */}
       <footer className="h-10 border-t border-[#2d2e2f] flex items-center justify-center text-xs text-[#4a4b4c]">
-        Chart Read • Educational purposes only
+        Chart Analyst • Educational purposes only
       </footer>
 
       <ToastContainer toasts={toasts} onRemove={removeToast} />

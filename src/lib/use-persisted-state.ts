@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import type { ChartRead } from "./chart-engine";
+import { ChartAnalysis } from "./chart-analysis";
 
 // Helper to get stored value
 function getStoredValue<T>(key: string, defaultValue: T): T {
@@ -81,7 +81,7 @@ export function useOnboarding(): [boolean, () => void] {
 
 export interface SavedAnalysis {
   id: string;
-  analysis: ChartRead;
+  analysis: ChartAnalysis;
   chartThumbnail: string;  // base64, small version
   prompt: string;
   savedAt: string;
@@ -91,7 +91,7 @@ export function useAnalysisHistory() {
   const [history, setHistory] = usePersistedState<SavedAnalysis[]>("chart_analyst_history", []);
   
   const saveAnalysis = useCallback((
-    analysis: ChartRead,
+    analysis: ChartAnalysis,
     chartImage: string,
     prompt: string
   ) => {
@@ -115,9 +115,9 @@ export function useAnalysisHistory() {
     setHistory([]);
   }, [setHistory]);
   
-  // Get recent analyses (simplified - no symbol in new type)
-  const getRecent = useCallback((count: number = 5) => {
-    return history.slice(0, count);
+  // Get recent analyses for a symbol
+  const getForSymbol = useCallback((symbol: string) => {
+    return history.filter((a) => a.analysis.symbol?.toLowerCase() === symbol.toLowerCase());
   }, [history]);
   
   return {
@@ -125,7 +125,7 @@ export function useAnalysisHistory() {
     saveAnalysis,
     removeAnalysis,
     clearHistory,
-    getRecent,
+    getForSymbol,
   };
 }
 
