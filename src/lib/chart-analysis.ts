@@ -282,23 +282,26 @@ export async function annotateChart(
     levels.push(`blue line at $${analysis.pivot.price.toLocaleString()}`);
   }
 
-  // Very minimal prompt - just draw lines, nothing else
-  const prompt = `Draw horizontal lines on this chart:
+  // Very minimal prompt - edit the image, don't generate new
+  const prompt = `Edit this trading chart image by adding horizontal price lines.
+
+ADD THESE LINES:
 ${levels.join("\n")}
 
-CRITICAL RULES:
-- ONLY draw simple horizontal lines at the specified prices
-- DO NOT add any text or labels
-- DO NOT modify the chart in any other way
-- Keep lines thin and semi-transparent
-- Preserve the original chart exactly as-is underneath`;
+RULES:
+- Draw thin horizontal lines at each price level
+- Green lines for support, red for resistance, blue for pivot
+- Keep the original chart EXACTLY as is
+- Do NOT add text, labels, or annotations
+- Do NOT redraw or modify the candlesticks
+- Just overlay the lines on top`;
 
-  // Try the native image generation model
+  // Try Gemini 3 Pro (Nano Banana) - best for image editing
   try {
-    console.log("Attempting annotation with gemini-2.0-flash-preview-image-generation...");
+    console.log("Attempting annotation with gemini-3-pro-image-preview...");
     
     const response = await client.models.generateContent({
-      model: "gemini-2.0-flash-preview-image-generation",
+      model: "gemini-3-pro-image-preview",
       contents: [
         {
           role: "user",
