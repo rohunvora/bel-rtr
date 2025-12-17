@@ -1,15 +1,17 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { 
   X,
+  ArrowUp,
+  ArrowDown,
   Loader2,
   Copy,
   Check,
-  TrendingUp,
-  TrendingDown,
-  Minus,
+  ChevronDown,
+  ChevronRight,
   HelpCircle,
+  AlertTriangle,
   Send,
   Plus,
   User,
@@ -19,21 +21,20 @@ import {
   Download,
   ZoomIn,
   Maximize2,
-  ArrowUpRight,
-  ArrowDownRight,
 } from "lucide-react";
-import type { ChartRead } from "@/lib/chart-engine";
+import { ChartAnalysis, generateAnnotationPlan } from "@/lib/chart-analysis";
 import { chatWithHistory, ChatMessage } from "@/lib/gemini";
 import ReactMarkdown from "react-markdown";
+import ChartOverlayRenderer from "@/components/ChartOverlayRenderer";
 
 interface ChartAnalystCardProps {
-  analysis: ChartRead;
+  analysis: ChartAnalysis;
   originalChart: string;
   annotatedChart: string | null;
   annotationStatus: "loading" | "ready" | "failed";
   userPrompt: string;
   onClose: () => void;
-  onSave?: (analysis: ChartRead) => void;
+  onSave?: (analysis: ChartAnalysis) => void;
 }
 
 // ============================================
@@ -115,16 +116,20 @@ function ChartImageModal({
 
 const EXPLANATIONS: Record<string, { title: string; content: string }> = {
   support: {
-    title: "Support Level",
-    content: "A price where buyers stepped in before. Price bounced from here. The more bounces, the stronger the level.",
+    title: "Support Zone",
+    content: "A price area where buyers tend to step in. Think of it as a \"floor\" that price has bounced from before. The more times it's tested and held, the stronger it is.",
   },
   resistance: {
-    title: "Resistance Level", 
-    content: "A price where sellers stepped in before. Price rejected from here. Multiple rejections make it stronger.",
+    title: "Resistance Zone", 
+    content: "A price area where sellers tend to step in. Think of it as a \"ceiling\" that price has been rejected from. Multiple rejections make it stronger.",
   },
-  pivot: {
-    title: "Pivot Point",
-    content: "The key decision price. Above it, bulls have control. Below it, bears have control.",
+  invalidation: {
+    title: "Invalidation",
+    content: "The price action that would prove the current read wrong. Always know when your thesis would be invalidated.",
+  },
+  scenario: {
+    title: "Conditional Scenario",
+    content: "Not a prediction, but a conditional: 'If X happens, then Y is likely.' Helps you know what to watch for.",
   },
 };
 
@@ -162,89 +167,58 @@ function InfoTooltip({ termKey }: { termKey: string }) {
 // SUB-COMPONENTS
 // ============================================
 
-function RegimeBadge({ regime }: { regime: ChartRead["regime"] }) {
-  const config = {
-    uptrend: { icon: TrendingUp, color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
-    downtrend: { icon: TrendingDown, color: "text-rose-400 bg-rose-500/10 border-rose-500/20" },
-    range: { icon: Minus, color: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
-  };
-  
-  const { icon: Icon, color } = config[regime];
-  
-  return (
-    <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border ${color}`}>
-      <Icon className="w-4 h-4" />
-      <span className="text-sm font-medium capitalize">{regime}</span>
-    </div>
-  );
-}
-
-function ConfidenceBadge({ confidence, reason }: { confidence: ChartRead["confidence"]; reason: string }) {
-  const config = {
-    high: { dots: 3, color: "text-emerald-400", label: "High" },
-    medium: { dots: 2, color: "text-amber-400", label: "Medium" },
-    low: { dots: 1, color: "text-rose-400", label: "Low" },
-  }[confidence];
-  
-  return (
-    <div className="flex items-center gap-2" title={reason}>
-      <div className="flex gap-0.5">
-        {[1, 2, 3].map((i) => (
-          <div 
-            key={i} 
-            className={`w-2 h-2 rounded-full ${i <= config.dots ? config.color.replace("text-", "bg-") : "bg-[#3d3e3f]"}`} 
-          />
-        ))}
-      </div>
-      <span className={`text-xs ${config.color}`}>{config.label}</span>
-    </div>
-  );
-}
-
-function LevelCard({ 
-  type, 
-  price, 
-  label 
-}: { 
-  type: "support" | "resistance" | "pivot"; 
-  price: number; 
-  label: string;
-}) {
+function ZoneRow({ zone, index }: { zone: ChartAnalysis["keyZones"][0]; index: number }) {
   const [copied, setCopied] = useState(false);
   
   const handleCopy = () => {
-    navigator.clipboard.writeText(String(price));
+    navigator.clipboard.writeText(String(zone.price));
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
   
-  const colors = {
-    support: "bg-emerald-500/5 border-emerald-500/20 text-emerald-400",
-    resistance: "bg-rose-500/5 border-rose-500/20 text-rose-400",
-    pivot: "bg-blue-500/5 border-blue-500/20 text-blue-400",
-  };
-  
-  const typeLabels = {
-    support: "Support",
-    resistance: "Resistance",
-    pivot: "Pivot",
-  };
+  const isSupport = zone.type === "support";
+  const strengthDots = zone.strength === "strong" ? 3 : zone.strength === "moderate" ? 2 : 1;
   
   return (
-    <div className={`flex items-center justify-between p-3 rounded-lg border ${colors[type]}`}>
+    <div 
+      className={`flex items-center justify-between p-3 rounded-lg border ${
+        isSupport 
+          ? "bg-emerald-500/5 border-emerald-500/20" 
+          : "bg-rose-500/5 border-rose-500/20"
+      }`}
+    >
       <div className="flex items-center gap-3">
-        <div className={`text-xs font-medium px-2 py-0.5 rounded ${colors[type]}`}>
-          {typeLabels[type]}
+        <div className={`text-xs font-medium px-2 py-0.5 rounded ${
+          isSupport ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-400"
+        }`}>
+          {isSupport ? "S" : "R"}{index + 1}
         </div>
-        <span className="text-sm text-[#9a9b9c]">{label}</span>
-        <InfoTooltip termKey={type} />
+        <div>
+          <div className="text-sm text-[#e8e8e8] font-medium">{zone.label}</div>
+          <div className="text-xs text-[#6b6c6d] mt-0.5">{zone.significance}</div>
+          <div className="flex items-center gap-2 mt-1">
+            <div className="flex gap-0.5">
+              {[1, 2, 3].map((i) => (
+                <div 
+                  key={i} 
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    i <= strengthDots 
+                      ? (isSupport ? "bg-emerald-400" : "bg-rose-400")
+                      : "bg-[#3d3e3f]"
+                  }`} 
+                />
+              ))}
+            </div>
+            <span className="text-xs text-[#6b6c6d]">{zone.strength}</span>
+          </div>
+        </div>
       </div>
       <button 
         onClick={handleCopy}
         className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-[#2d2e2f] transition-colors group"
       >
-        <span className={`font-mono text-sm ${colors[type].split(" ")[2]}`}>
-          ${price.toLocaleString()}
+        <span className={`font-mono text-sm ${isSupport ? "text-emerald-400" : "text-rose-400"}`}>
+          ${zone.price.toLocaleString()}
         </span>
         {copied ? (
           <Check className="w-3.5 h-3.5 text-emerald-400" />
@@ -256,28 +230,46 @@ function LevelCard({
   );
 }
 
-function WatchCard({ direction, text }: { direction: "above" | "below"; text: string }) {
-  const isUp = direction === "above";
+function ScenarioItem({ scenario, index }: { scenario: ChartAnalysis["scenarios"][0]; index: number }) {
+  const [expanded, setExpanded] = useState(index === 0);
+  const isBullish = index === 0;
   
   return (
-    <div className={`p-3 rounded-lg border ${
-      isUp 
+    <div className={`rounded-xl border ${
+      isBullish 
         ? "bg-emerald-500/5 border-emerald-500/20" 
         : "bg-rose-500/5 border-rose-500/20"
     }`}>
-      <div className="flex items-center gap-2 mb-1">
-        {isUp ? (
-          <ArrowUpRight className="w-4 h-4 text-emerald-400" />
+      <button 
+        onClick={() => setExpanded(!expanded)}
+        className="w-full p-3 flex items-center justify-between text-left"
+      >
+        <div className="flex items-center gap-2">
+          {isBullish ? (
+            <ArrowUp className="w-4 h-4 text-emerald-400" />
+          ) : (
+            <ArrowDown className="w-4 h-4 text-rose-400" />
+          )}
+          <span className={`text-sm font-medium ${isBullish ? "text-emerald-400" : "text-rose-400"}`}>
+            {scenario.condition.substring(0, 40)}{scenario.condition.length > 40 ? "..." : ""}
+          </span>
+        </div>
+        {expanded ? (
+          <ChevronDown className="w-4 h-4 text-[#6b6c6d]" />
         ) : (
-          <ArrowDownRight className="w-4 h-4 text-rose-400" />
+          <ChevronRight className="w-4 h-4 text-[#6b6c6d]" />
         )}
-        <span className={`text-xs font-medium uppercase tracking-wide ${
-          isUp ? "text-emerald-400" : "text-rose-400"
-        }`}>
-          Watch {direction}
-        </span>
-      </div>
-      <div className="text-sm text-[#e8e8e8]">{text}</div>
+      </button>
+      
+      {expanded && (
+        <div className="px-3 pb-3 border-t border-[#2d2e2f] pt-3">
+          <div className="text-xs text-[#6b6c6d] mb-1">Condition</div>
+          <div className="text-sm text-[#e8e8e8] mb-3">{scenario.condition}</div>
+          
+          <div className="text-xs text-[#6b6c6d] mb-1">What it means</div>
+          <div className="text-sm text-[#9a9b9c]">{scenario.implication}</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -353,7 +345,8 @@ export function ChartAnalystCard({
   onClose,
   onSave,
 }: ChartAnalystCardProps) {
-  const [showAnnotated, setShowAnnotated] = useState(true);
+  // Default to AI annotated view (zones only)
+  const [viewMode, setViewMode] = useState<"annotated" | "original">(annotatedChart ? "annotated" : "original");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [chatImage, setChatImage] = useState<string | null>(null);
@@ -365,10 +358,25 @@ export function ChartAnalystCard({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Display chart (annotated if available and selected, otherwise original)
-  const displayChart = showAnnotated && annotatedChart ? annotatedChart : originalChart;
+  // Generate annotation plan (for canvas fallback if needed)
+  const annotationPlan = useMemo(() => generateAnnotationPlan(analysis), [analysis]);
+  
+  // Update view mode when annotated chart becomes available
+  useEffect(() => {
+    if (annotatedChart && viewMode === "original") {
+      setViewMode("annotated");
+    }
+  }, [annotatedChart]);
+  
+  // Determine display chart
+  const displayChart = useMemo(() => {
+    if (viewMode === "annotated" && annotatedChart) {
+      return annotatedChart;
+    }
+    return originalChart;
+  }, [viewMode, annotatedChart, originalChart]);
 
-  // Auto-scroll chat
+  // Auto-scroll
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages, isTyping]);
@@ -377,36 +385,33 @@ export function ChartAnalystCard({
   const systemContext = `You are a chart analyst assistant. You previously analyzed a chart and found:
 
 Story: ${analysis.story}
-Regime: ${analysis.regime}
-Support: ${analysis.support ? `$${analysis.support.price} (${analysis.support.label})` : "none identified"}
-Resistance: ${analysis.resistance ? `$${analysis.resistance.price} (${analysis.resistance.label})` : "none identified"}
-Pivot: ${analysis.pivot ? `$${analysis.pivot.price} (${analysis.pivot.label})` : "none identified"}
+Current context: ${analysis.currentContext}
+Key zones: ${analysis.keyZones.map(z => `${z.label} at $${z.price} (${z.type})`).join(", ")}
 Current price: $${analysis.currentPrice}
+Invalidation: ${analysis.invalidation}
 
-What to watch:
-- Above: ${analysis.watchAbove}
-- Below: ${analysis.watchBelow}
+Be helpful, concise, and reference your previous analysis when relevant.`;
 
-Be helpful and concise. Reference the levels when relevant.`;
-
-  // Download chart
+  // Download chart image
   const downloadChart = useCallback(() => {
     const link = document.createElement("a");
     link.href = `data:image/png;base64,${displayChart}`;
-    link.download = `chart-analysis-${new Date().toISOString().split("T")[0]}.png`;
+    link.download = `chart-analysis-${analysis.symbol || "chart"}-${new Date().toISOString().split("T")[0]}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  }, [displayChart]);
+  }, [displayChart, analysis.symbol]);
 
-  // Copy chart to clipboard
+  // Copy chart image to clipboard
   const copyChartToClipboard = useCallback(async () => {
     try {
       const response = await fetch(`data:image/png;base64,${displayChart}`);
       const blob = await response.blob();
+      
       await navigator.clipboard.write([
         new ClipboardItem({ "image/png": blob })
       ]);
+      
       setCopiedImage(true);
       setTimeout(() => setCopiedImage(false), 2000);
     } catch (error) {
@@ -417,7 +422,7 @@ Be helpful and concise. Reference the levels when relevant.`;
     }
   }, [displayChart]);
 
-  // Handle paste
+  // Handlers
   const handlePaste = (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
     if (!items) return;
@@ -460,7 +465,7 @@ Be helpful and concise. Reference the levels when relevant.`;
     
     const messagesWithContext: ChatMessage[] = [
       { role: "user", content: "Here is the chart:", image: originalChart },
-      { role: "model", content: analysis.story },
+      { role: "model", content: analysis.story + " " + analysis.currentContext },
       ...newMessages
     ];
     
@@ -489,15 +494,10 @@ Be helpful and concise. Reference the levels when relevant.`;
     }
   };
 
-  const copyAllLevels = () => {
-    const lines: string[] = [];
-    if (analysis.support) lines.push(`SUPPORT: $${analysis.support.price.toLocaleString()} (${analysis.support.label})`);
-    if (analysis.resistance) lines.push(`RESISTANCE: $${analysis.resistance.price.toLocaleString()} (${analysis.resistance.label})`);
-    if (analysis.pivot) lines.push(`PIVOT: $${analysis.pivot.price.toLocaleString()} (${analysis.pivot.label})`);
-    navigator.clipboard.writeText(lines.join("\n"));
+  const copyAllZones = () => {
+    const zones = analysis.keyZones.map(z => `${z.type.toUpperCase()}: $${z.price.toLocaleString()} (${z.label})`);
+    navigator.clipboard.writeText(zones.join("\n"));
   };
-
-  const hasLevels = analysis.support || analysis.resistance || analysis.pivot;
 
   return (
     <>
@@ -516,7 +516,12 @@ Be helpful and concise. Reference the levels when relevant.`;
         <div className="px-5 py-3 border-b border-[#2d2e2f] flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3">
             <BarChart3 className="w-5 h-5 text-cyan-400" />
-            <span className="text-sm font-medium text-[#e8e8e8]">Chart Read</span>
+            <span className="text-sm font-medium text-[#e8e8e8]">Chart Analysis</span>
+            {analysis.symbol && (
+              <span className="text-xs text-[#6b6c6d] bg-[#2d2e2f] px-2 py-0.5 rounded">
+                {analysis.symbol} {analysis.timeframe && `• ${analysis.timeframe}`}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {onSave && (
@@ -546,85 +551,99 @@ Be helpful and concise. Reference the levels when relevant.`;
               <Sparkles className="w-4 h-4 text-cyan-400" />
             </div>
             <div className="flex-1 min-w-0 pt-1 space-y-4">
-              {/* Story */}
-              <div className="text-sm text-[#e8e8e8] leading-relaxed">
-                {analysis.story}
+              {/* Story - the main narrative */}
+              <div className="space-y-2">
+                <div className="text-sm text-[#e8e8e8] leading-relaxed">
+                  {analysis.story}
+                </div>
+                <div className="text-sm text-[#9a9b9c] leading-relaxed">
+                  {analysis.currentContext}
+                </div>
               </div>
               
-              {/* Regime + Confidence */}
-              <div className="flex items-center gap-4 flex-wrap">
-                <RegimeBadge regime={analysis.regime} />
-                <ConfidenceBadge confidence={analysis.confidence} reason={analysis.confidenceReason} />
-              </div>
-              
-              {/* Chart with controls */}
+              {/* Annotated Chart */}
               <div className="rounded-xl border border-[#2d2e2f] overflow-hidden bg-[#161717]">
                 <div className="px-3 py-2 flex items-center justify-between border-b border-[#2d2e2f]">
                   <div className="flex items-center gap-1">
-                    {annotatedChart && (
-                      <>
-                        <button
-                          onClick={() => setShowAnnotated(true)}
-                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
-                            showAnnotated
-                              ? "bg-purple-500/20 text-purple-400"
-                              : "text-[#6b6c6d] hover:text-[#9a9b9c]"
-                          }`}
-                        >
-                          <Sparkles className="w-3 h-3" />
-                          Annotated
-                        </button>
-                        <button
-                          onClick={() => setShowAnnotated(false)}
-                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
-                            !showAnnotated
-                              ? "bg-[#242526] text-[#e8e8e8]"
-                              : "text-[#6b6c6d] hover:text-[#9a9b9c]"
-                          }`}
-                        >
-                          Original
-                        </button>
-                      </>
-                    )}
+                    {/* AI annotated view (default) */}
+                    <button
+                      onClick={() => setViewMode("annotated")}
+                      disabled={!annotatedChart}
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                        viewMode === "annotated"
+                          ? "bg-cyan-500/20 text-cyan-400"
+                          : annotatedChart
+                            ? "text-[#6b6c6d] hover:text-[#9a9b9c]"
+                            : "text-[#4b4c4d] cursor-not-allowed"
+                      }`}
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      Zones
+                    </button>
+                    
+                    {/* Original view */}
+                    <button
+                      onClick={() => setViewMode("original")}
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+                        viewMode === "original" ? "bg-[#242526] text-[#e8e8e8]" : "text-[#6b6c6d] hover:text-[#9a9b9c]"
+                      }`}
+                    >
+                      Original
+                    </button>
+                    
                     {annotationStatus === "loading" && (
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-purple-400/60">
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-cyan-400/60">
                         <Loader2 className="w-3 h-3 animate-spin" />
                         Drawing zones...
                       </div>
                     )}
                   </div>
                   
+                  {/* Image actions */}
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => setShowZoom(true)}
                       className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-[#6b6c6d] hover:text-[#9a9b9c] hover:bg-[#242526] transition-colors"
+                      title="Zoom in"
                     >
                       <Maximize2 className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={copyChartToClipboard}
                       className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-[#6b6c6d] hover:text-[#9a9b9c] hover:bg-[#242526] transition-colors"
+                      title="Copy image"
                     >
                       {copiedImage ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                     </button>
                     <button
                       onClick={downloadChart}
                       className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-[#6b6c6d] hover:text-[#9a9b9c] hover:bg-[#242526] transition-colors"
+                      title="Download"
                     >
                       <Download className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
                 
+                {/* Chart display */}
                 <div 
                   className="relative cursor-zoom-in group"
                   onClick={() => setShowZoom(true)}
                 >
-                  <img 
-                    src={`data:image/png;base64,${displayChart}`} 
-                    alt="Chart" 
-                    className="w-full"
-                  />
+                  {/* If we have annotated chart, show it. Otherwise fall back to canvas renderer */}
+                  {viewMode === "annotated" && !annotatedChart ? (
+                    <ChartOverlayRenderer
+                      imageBase64={originalChart}
+                      plan={annotationPlan}
+                      analysis={analysis}
+                    />
+                  ) : (
+                    <img 
+                      src={`data:image/png;base64,${displayChart}`} 
+                      alt="Chart" 
+                      className="w-full"
+                    />
+                  )}
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100 pointer-events-none">
                     <div className="bg-black/60 rounded-lg px-3 py-2 flex items-center gap-2 text-white text-sm">
                       <ZoomIn className="w-4 h-4" />
@@ -634,15 +653,16 @@ Be helpful and concise. Reference the levels when relevant.`;
                 </div>
               </div>
               
-              {/* Key Levels */}
-              {hasLevels && (
+              {/* Key Zones */}
+              {analysis.keyZones.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="text-xs text-[#6b6c6d] uppercase tracking-wide">
-                      Key Levels
+                    <div className="text-xs text-[#6b6c6d] uppercase tracking-wide flex items-center gap-2">
+                      Key Zones
+                      <InfoTooltip termKey="support" />
                     </div>
                     <button 
-                      onClick={copyAllLevels}
+                      onClick={copyAllZones}
                       className="text-xs text-[#6b6c6d] hover:text-[#9a9b9c] flex items-center gap-1"
                     >
                       <Copy className="w-3 h-3" />
@@ -650,47 +670,39 @@ Be helpful and concise. Reference the levels when relevant.`;
                     </button>
                   </div>
                   <div className="space-y-2">
-                    {analysis.resistance && (
-                      <LevelCard 
-                        type="resistance" 
-                        price={analysis.resistance.price} 
-                        label={analysis.resistance.label}
-                      />
-                    )}
-                    {analysis.pivot && (
-                      <LevelCard 
-                        type="pivot" 
-                        price={analysis.pivot.price} 
-                        label={analysis.pivot.label}
-                      />
-                    )}
-                    {analysis.support && (
-                      <LevelCard 
-                        type="support" 
-                        price={analysis.support.price} 
-                        label={analysis.support.label}
-                      />
-                    )}
+                    {analysis.keyZones.map((zone, i) => (
+                      <ZoneRow key={i} zone={zone} index={i} />
+                    ))}
                   </div>
                 </div>
               )}
               
-              {/* What to Watch */}
-              <div className="space-y-2">
-                <div className="text-xs text-[#6b6c6d] uppercase tracking-wide">
-                  What to Watch
+              {/* Scenarios - If/Then conditionals */}
+              {analysis.scenarios.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-xs text-[#6b6c6d] uppercase tracking-wide flex items-center gap-2">
+                    What to Watch
+                    <InfoTooltip termKey="scenario" />
+                  </div>
+                  <div className="space-y-2">
+                    {analysis.scenarios.map((scenario, i) => (
+                      <ScenarioItem key={i} scenario={scenario} index={i} />
+                    ))}
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <WatchCard direction="above" text={analysis.watchAbove} />
-                  <WatchCard direction="below" text={analysis.watchBelow} />
-                </div>
-              </div>
+              )}
               
-              {/* Current price */}
-              <div className="flex items-center gap-2 text-sm text-[#6b6c6d]">
-                <span>Current price:</span>
-                <span className="font-mono text-[#e8e8e8]">${analysis.currentPrice.toLocaleString()}</span>
-              </div>
+              {/* Invalidation */}
+              {analysis.invalidation && analysis.invalidation !== "Unknown" && (
+                <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/20">
+                  <div className="flex items-center gap-2 mb-1">
+                    <AlertTriangle className="w-4 h-4 text-amber-400" />
+                    <span className="text-xs text-amber-400 uppercase tracking-wide">Invalidation</span>
+                    <InfoTooltip termKey="invalidation" />
+                  </div>
+                  <p className="text-sm text-[#9a9b9c]">{analysis.invalidation}</p>
+                </div>
+              )}
             </div>
           </div>
           
