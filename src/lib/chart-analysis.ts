@@ -2,11 +2,10 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_AI_KEY;
-
 let ai: GoogleGenAI | null = null;
 
 function getAI() {
+  const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_AI_KEY;
   if (!API_KEY) {
     console.error("Google AI API key not configured");
     return null;
@@ -36,7 +35,7 @@ function logSubsection(title: string) {
 // ============================================
 
 export interface KeyZone {
-  price: number;
+    price: number;
   label: string;        // "Prior resistance", "Gap fill level", "Breakdown origin"
   significance: string; // Why this matters - historical context
   type: "support" | "resistance";
@@ -59,8 +58,8 @@ export interface Regime {
 }
 
 export interface RangeBox {
-  high: number;
-  low: number;
+    high: number;
+    low: number;
   confidence: number; // 0-1
 }
 
@@ -123,9 +122,9 @@ export interface ChartAnalysis {
 
 // Confidence thresholds for display (tune these over time)
 export const DISPLAY_THRESHOLDS = {
-  rangeBox: 0.8,   // Only show if confidence >= 0.8
-  pivots: 1.1,     // Hidden for now (set > 1.0 to disable)
-  fakeouts: 1.1,   // Hidden for now (set > 1.0 to disable)
+  rangeBox: 0.6,   // Show if confidence >= 0.6
+  pivots: 0.6,     // Show if confidence >= 0.6
+  fakeouts: 0.6,   // Show if confidence >= 0.6
 };
 
 export interface ValidatedAnalysis {
@@ -243,13 +242,14 @@ Look at the chart and describe what happened like you're explaining it to a frie
 
 Be specific with prices you can READ FROM THE Y-AXIS. Use ACTUAL wick highs/lows, not round numbers.
 
-STEP 2: IDENTIFY KEY ZONES (max 4)
-Find 2-4 price zones where price REACTED MULTIPLE TIMES in the past:
-- Highs where price got rejected (resistance)
-- Lows where price bounced (support)
-- Breakdown/breakout origins
+STEP 2: IDENTIFY KEY ZONES (REQUIRED: 2-4)
+It is IMPOSSIBLE for a chart to have 0 key zones. You MUST identify at least 2 levels where price reacted.
+- If trending: Mark the trend start (support) and recent high/low (resistance/support).
+- If ranging: Mark the range high (resistance) and range low (support).
+- If breakout: Mark the breakout level (now support).
+- If price is testing a level, that level IS a key zone.
 
-CRITICAL: A zone is NOT where price currently is. Read the ACTUAL price from the Y-axis where wicks touched.
+CRITICAL: Read the ACTUAL price from the Y-axis.
 
 STEP 3: CONDITIONAL SCENARIOS (not predictions)
 Give 2 conditional scenarios using "If... then..." format:
@@ -269,23 +269,19 @@ Classify the current market regime:
 
 Include your confidence (0.0 to 1.0) in this classification.
 
-=== LAYER 3: CONDITIONAL PATTERNS (ONLY IF CLEARLY VISIBLE) ===
+=== LAYER 3: DETAILED PATTERN SCAN (CONTEXT AWARE) ===
 
-Only include these if you can see them clearly with confidence > 0.7:
+RANGE BOX (Required if Regime is "Ranging"):
+- If "ranging", you MUST define the box: high (resistance) and low (support).
+- If not ranging, set to null.
 
-RANGE BOX (if regime is "ranging"):
-- high: The resistance ceiling of the range (read EXACT price from Y-axis)
-- low: The support floor of the range (read EXACT price from Y-axis)
+PIVOTS (Required if Regime is "Trending"):
+- If "trending", you MUST identify the 2-3 most recent swing points (HH, HL, LH, LL).
+- If not trending, set to null.
 
-PIVOTS (if clear swing structure is visible):
-- Mark recent pivot points as HH (Higher High), HL (Higher Low), LH (Lower High), LL (Lower Low)
-- Only include if the structure is obvious
-
-FAKEOUTS (if you see failed breakouts):
-- A level where price broke above/below but then reversed
-- Include direction ("above" or "below") and the price level
-
-If you're not confident about these patterns, LEAVE THEM NULL.
+FAKEOUTS (Scan Aggressively):
+- Look for wicks that poked through a level and closed back inside.
+- If seen, record them. This is high-value alpha.
 
 USER'S QUESTION: {USER_QUESTION}
 
@@ -324,11 +320,11 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
     "confidence": <0.0 to 1.0>
   },
   
-  "rangeBox": <if regime is "ranging" AND you can clearly see bounds: { "high": <exact price>, "low": <exact price>, "confidence": <0.0-1.0> } | otherwise: null>,
+  "rangeBox": <If ranging: { "high": <price>, "low": <price>, "confidence": 0.9 } | else: null>,
   
-  "pivots": <if clear swing structure visible: { "points": [{ "price": <num>, "label": "<HH|HL|LH|LL>" }], "confidence": <0.0-1.0> } | otherwise: null>,
+  "pivots": <If trending: { "points": [{ "price": <num>, "label": "<HH|HL|LH|LL>" }], "confidence": 0.9 } | else: null>,
   
-  "fakeouts": <if failed breakouts visible: [{ "level": <price>, "direction": "<above|below>", "confidence": <0.0-1.0> }] | otherwise: null>,
+  "fakeouts": <If fakeouts visible: [{ "level": <price>, "direction": "<above|below>", "confidence": 0.9 }] | else: null>,
   
   "currentPrice": <exact number from chart>,
   "symbol": "<ticker if visible, null if not>",
@@ -337,14 +333,13 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
 
 HARD RULES (DO NOT BREAK):
 1. READ ACTUAL PRICES FROM Y-AXIS - not round numbers. If the wick high is $22.40, say $22.40, not $22 or $25.
-2. keyZones must be zones where price REACTED in the past, not where price currently is
-3. scenarios describe MEANING, not price targets
-4. Never include current price as a key zone
-5. Max 4 key zones - pick the most important ones
-6. Every zone must have a historical reason (rejection, bounce, breakout/breakdown origin)
-7. Regime classification is REQUIRED - always include it
-8. Layer 3 patterns (rangeBox, pivots, fakeouts) are OPTIONAL - only include if confidence > 0.7
-9. If you can't see clear structure, say so - don't make things up`;
+2. keyZones must be zones where price REACTED in the past.
+3. You MUST identify at least 2 keyZones. Never 0.
+4. If you mention a price level in the 'story', it MUST be included in 'keyZones'.
+5. If regime is Ranging, rangeBox is REQUIRED.
+6. If regime is Trending, pivots are REQUIRED.
+7. Layer 3 patterns are HIGH PRIORITY if the regime matches.
+8. If Y-axis uses "M" or "K" suffixes, convert to raw numbers for 'price' fields (e.g. 1.5M -> 1.5) but mention the scale in labels/story.`;
 
 // ============================================
 // ANNOTATION SYSTEM INSTRUCTION
@@ -384,9 +379,9 @@ CRITICAL RULES:
 
 Return a single edited image with the overlays applied.`;
 
-// ============================================
+    // ============================================
 // ANALYSIS FUNCTION
-// ============================================
+    // ============================================
 
 export async function analyzeChart(
   imageBase64: string,
@@ -480,24 +475,10 @@ export async function analyzeChart(
       });
       console.log(`   Result: ${beforeGate1} → ${keyZones.length} zones`);
       
-      // Gate 2: Filter zones too close to current price (within 3%)
-      logSubsection("Validation Gate 2: Proximity Filter (3%)");
-      const beforeGate2 = keyZones.length;
-      if (currentPrice > 0) {
-        keyZones = keyZones.filter(z => {
-          const diff = Math.abs(z.price - currentPrice) / currentPrice;
-          const pctDiff = (diff * 100).toFixed(1);
-          if (diff < 0.03) {
-            console.log(`   ❌ FILTERED: $${z.price} - too close to current $${currentPrice} (${pctDiff}%)`);
-            return false;
-          }
-          console.log(`   ✅ KEPT: $${z.price} - ${pctDiff}% from current`);
-          return true;
-        });
-      } else {
-        console.log("   ⚠️ Skipped: No current price to compare against");
-      }
-      console.log(`   Result: ${beforeGate2} → ${keyZones.length} zones`);
+      // Gate 2: Proximity Filter - DISABLED
+      // We want to show zones even if price is testing them
+      logSubsection("Validation Gate 2: Proximity Filter (DISABLED)");
+      console.log("   ℹ️ Allowing zones close to current price (testing support/resistance)");
       
       // Gate 3: Limit to 4 zones
       keyZones = keyZones.slice(0, 4);
@@ -686,7 +667,7 @@ function buildAnnotationBrief(analysis: ChartAnalysis): object {
 // ============================================
 
 export async function annotateChart(
-  imageBase64: string,
+  imageBase64: string, 
   analysis: ChartAnalysis
 ): Promise<string | null> {
   logSection("CHART ANNOTATION STARTED");
@@ -729,7 +710,8 @@ RANGE BOX TO DRAW:
     pivotInstruction = `
 PIVOT MARKERS TO DRAW:
 ${analysis.pivots.points.map(p => `- ${p.label} at $${p.price}`).join("\n")}
-- Mark each with a small circle and label`;
+- Mark each with a DISTINCT hollow circle ⭕ (different from zones) and text label
+- Do NOT draw horizontal lines for pivots, just the marker`;
     console.log(`📍 Pivots: ${analysis.pivots.points.length} points`);
   }
 
@@ -768,29 +750,29 @@ ${userPrompt}`;
     console.log("🤖 Model: gemini-3-pro-image-preview");
     
     const startTime = Date.now();
-    const response = await client.models.generateContent({
+      const response = await client.models.generateContent({
       model: "gemini-3-pro-image-preview",
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              inlineData: {
-                mimeType: "image/png",
-                data: imageBase64,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                inlineData: {
+                  mimeType: "image/png",
+                  data: imageBase64,
+                },
               },
-            },
-            { text: fullPrompt },
-          ],
+              { text: fullPrompt },
+            ],
+          },
+        ],
+        config: {
+          responseModalities: ["TEXT", "IMAGE"],
         },
-      ],
-      config: {
-        responseModalities: ["TEXT", "IMAGE"],
-      },
-    });
+      });
     console.log(`⏱️ API response time: ${Date.now() - startTime}ms`);
 
-    const parts = response.candidates?.[0]?.content?.parts || [];
+      const parts = response.candidates?.[0]?.content?.parts || [];
     console.log(`📦 Response parts: ${parts.length}`);
     
     for (let i = 0; i < parts.length; i++) {
@@ -802,20 +784,20 @@ ${userPrompt}`;
         inlineDataSize: part.inlineData?.data ? `${(part.inlineData.data.length / 1024).toFixed(1)} KB` : null,
       });
       
-      if (part.inlineData?.data) {
+        if (part.inlineData?.data) {
         console.log(`✅ Successfully got annotated image (${(part.inlineData.data.length / 1024).toFixed(1)} KB)`);
-        return part.inlineData.data;
+          return part.inlineData.data;
       }
     }
     
     console.log("⚠️ No image data in response parts");
     return null;
-    
+
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     console.error("❌ Annotation failed:", errorMessage);
-    return null;
-  }
+  return null;
+}
 }
 
 // ============================================
