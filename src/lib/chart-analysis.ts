@@ -1,9 +1,75 @@
+/**
+ * Chart Analysis Module
+ * =====================
+ * 
+ * This module provides AI-powered chart analysis and annotation functionality
+ * using Google's Gemini models. It's designed to analyze trading chart screenshots
+ * and produce structured technical analysis with visual annotations.
+ * 
+ * ## Architecture Overview
+ * 
+ * The chart analysis pipeline has two main phases:
+ * 
+ * 1. **Analysis Phase** (analyzeChart)
+ *    - Uses Gemini 2.0 Flash for vision + text understanding
+ *    - Extracts: story, regime, key zones, scenarios, invalidation
+ *    - Returns structured JSON output
+ * 
+ * 2. **Annotation Phase** (annotateChart)
+ *    - Uses Gemini 3 Pro Image Preview for image generation
+ *    - Takes the analysis results and draws zones on the chart
+ *    - Returns base64-encoded annotated image
+ * 
+ * ## How to Replicate This Process
+ * 
+ * ### Step 1: Set up Gemini API
+ * ```typescript
+ * import { GoogleGenAI } from "@google/genai";
+ * const ai = new GoogleGenAI({ apiKey: YOUR_API_KEY });
+ * ```
+ * 
+ * ### Step 2: Analyze the Chart
+ * ```typescript
+ * const analysis = await analyzeChart(imageBase64, "What's the story?");
+ * // Returns: { story, keyZones, regime, scenarios, ... }
+ * ```
+ * 
+ * ### Step 3: Annotate the Chart (optional)
+ * ```typescript
+ * const annotatedImage = await annotateChart(imageBase64, analysis);
+ * // Returns: base64 string of annotated chart
+ * ```
+ * 
+ * ### Step 4: Fallback to Canvas (if Gemini annotation fails)
+ * ```typescript
+ * const plan = generateAnnotationPlan(analysis);
+ * // Use ChartOverlayRenderer component with this plan
+ * ```
+ * 
+ * @module chart-analysis
+ * @requires @google/genai
+ */
+
 "use client";
 
 import { GoogleGenAI } from "@google/genai";
 
+// ============================================
+// GEMINI CLIENT SINGLETON
+// ============================================
+
+/**
+ * Singleton instance of the Gemini AI client.
+ * Initialized lazily on first use.
+ */
 let ai: GoogleGenAI | null = null;
 
+/**
+ * Get or create the Gemini AI client.
+ * Requires NEXT_PUBLIC_GOOGLE_AI_KEY environment variable.
+ * 
+ * @returns GoogleGenAI client instance or null if API key not configured
+ */
 function getAI() {
   const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_AI_KEY;
   if (!API_KEY) {
@@ -17,119 +83,231 @@ function getAI() {
 }
 
 // ============================================
-// LOGGING HELPERS
+// LOGGING HELPERS (for debugging)
 // ============================================
 
+/**
+ * Log a major section header to console.
+ * Useful for debugging the analysis pipeline.
+ */
 function logSection(title: string) {
   console.log(`\n${"=".repeat(60)}`);
   console.log(`📊 ${title}`);
   console.log("=".repeat(60));
 }
 
+/**
+ * Log a subsection header to console.
+ */
 function logSubsection(title: string) {
   console.log(`\n--- ${title} ---`);
 }
 
 // ============================================
-// TYPES - Story-first, no targets
+// TYPE DEFINITIONS
 // ============================================
 
+/**
+ * A key price zone where the market has reacted historically.
+ * 
+ * @example
+ * {
+ *   price: 94200,
+ *   label: "March low",
+ *   significance: "Bounced 3x in Q1",
+ *   type: "support",
+ *   strength: "strong"
+ * }
+ */
 export interface KeyZone {
-    price: number;
-  label: string;        // "Prior resistance", "Gap fill level", "Breakdown origin"
-  significance: string; // Why this matters - historical context
+  /** The price level of this zone (read from Y-axis) */
+  price: number;
+  /** Short descriptive label: "Prior resistance", "Gap fill", "Breakdown origin" */
+  label: string;
+  /** Why this zone matters - historical context */
+  significance: string;
+  /** Whether this is a support or resistance zone */
   type: "support" | "resistance";
+  /** Strength based on touch count: weak (1), moderate (2), strong (3+) */
   strength: "weak" | "moderate" | "strong";
 }
 
+/**
+ * A conditional scenario describing what might happen.
+ * NOT a prediction - just "if X then Y" reasoning.
+ * 
+ * @example
+ * {
+ *   condition: "If price breaks above $98,500...",
+ *   implication: "...buyers have reclaimed control, range breakout confirmed"
+ * }
+ */
 export interface Scenario {
-  condition: string;    // "If price breaks above 185..."
-  implication: string;  // "...buyers have reclaimed control, next zone of interest is 195"
-  // NO target field - we describe outcomes, not predict prices
+  /** The trigger condition: "If price breaks above 185..." */
+  condition: string;
+  /** What it means (NOT a target): "...buyers reclaimed control" */
+  implication: string;
 }
 
-// ============================================
-// NEW: Extended Pattern Types
-// ============================================
-
+/**
+ * Market regime classification.
+ * Every analysis MUST include a regime.
+ */
 export interface Regime {
+  /** The current market state */
   type: "trending_up" | "trending_down" | "ranging" | "breakout" | "breakdown";
-  confidence: number; // 0-1
+  /** Confidence in this classification (0-1) */
+  confidence: number;
 }
 
+/**
+ * Range box for ranging markets.
+ * Only populated when regime is "ranging".
+ */
 export interface RangeBox {
-    high: number;
-    low: number;
-  confidence: number; // 0-1
+  /** Upper bound of the range (resistance) */
+  high: number;
+  /** Lower bound of the range (support) */
+  low: number;
+  /** Confidence in range detection (0-1) */
+  confidence: number;
 }
 
+/**
+ * A pivot point in market structure.
+ * Used to identify higher highs/lows or lower highs/lows.
+ */
 export interface PivotPoint {
+  /** The price of this pivot */
   price: number;
-  label: "HH" | "HL" | "LH" | "LL"; // Higher High, Higher Low, Lower High, Lower Low
+  /** Pivot classification */
+  label: "HH" | "HL" | "LH" | "LL";
 }
 
+/**
+ * Collection of pivot points with confidence.
+ * Only populated when regime is trending.
+ */
 export interface Pivots {
+  /** Array of identified pivot points */
   points: PivotPoint[];
-  confidence: number; // 0-1
+  /** Confidence in pivot detection (0-1) */
+  confidence: number;
 }
 
+/**
+ * A failed breakout (fakeout) pattern.
+ * High-value signal when detected.
+ */
 export interface Fakeout {
+  /** The price level that was faked out */
   level: number;
+  /** Direction of the failed break */
   direction: "above" | "below";
-  confidence: number; // 0-1
+  /** Confidence in fakeout detection (0-1) */
+  confidence: number;
 }
 
 // ============================================
 // MAIN ANALYSIS TYPE
 // ============================================
 
+/**
+ * Complete chart analysis result.
+ * This is the main output type from analyzeChart().
+ * 
+ * ## Required Fields (always present)
+ * - story: Narrative of what happened
+ * - currentContext: Where we are now
+ * - keyZones: 2-4 key price levels
+ * - scenarios: 2 if/then conditionals
+ * - invalidation: What would change the thesis
+ * - regime: Market state classification
+ * 
+ * ## Conditional Fields (only if detected with confidence)
+ * - rangeBox: If market is ranging
+ * - pivots: If market is trending
+ * - fakeouts: If failed breakouts visible
+ */
 export interface ChartAnalysis {
-  // The narrative - this is the core
-  story: string;           // 2-3 sentence narrative of what happened on this chart
-  currentContext: string;  // Where we are now in that story
+  // === REQUIRED: The Narrative ===
+  /** 2-3 sentence story of what happened on this chart */
+  story: string;
+  /** Where price is NOW in that story */
+  currentContext: string;
   
-  // Structural levels - where price REACTED (not where it IS)
-  keyZones: KeyZone[];     // Max 4 zones that matter
+  // === REQUIRED: Structural Levels ===
+  /** 2-4 zones where price has reacted historically */
+  keyZones: KeyZone[];
   
-  // Conditional thinking - not predictions
-  scenarios: Scenario[];   // 2 scenarios: "if X then Y"
+  // === REQUIRED: Conditional Thinking ===
+  /** Exactly 2 "if X then Y" scenarios */
+  scenarios: Scenario[];
   
-  // Risk management
-  invalidation: string;    // What would change the thesis entirely
+  // === REQUIRED: Risk Management ===
+  /** What would completely invalidate this thesis */
+  invalidation: string;
   
-  // REGIME - Always present
-  regime: Regime;          // Market regime classification
+  // === REQUIRED: Regime Classification ===
+  /** Current market regime with confidence */
+  regime: Regime;
   
-  // CONDITIONAL PATTERNS - Only present if detected with confidence
-  rangeBox?: RangeBox;     // Range bounds if market is ranging
-  pivots?: Pivots;         // Key pivot points if clear structure
-  fakeouts?: Fakeout[];    // Failed breakouts/fakeouts if visible
+  // === CONDITIONAL: Only if detected ===
+  /** Range bounds (only if regime is "ranging") */
+  rangeBox?: RangeBox;
+  /** Pivot points (only if regime is trending) */
+  pivots?: Pivots;
+  /** Failed breakouts (if visible with confidence) */
+  fakeouts?: Fakeout[];
   
-  // Metadata
+  // === METADATA ===
+  /** Current price read from chart */
   currentPrice: number;
+  /** Ticker symbol if visible (e.g., "BTC/USD") */
   symbol?: string;
+  /** Timeframe if visible (e.g., "4H", "1D") */
   timeframe?: string;
+  /** ISO timestamp of when analysis was performed */
   analyzedAt: string;
   
-  // Status
+  // === STATUS ===
+  /** Whether analysis succeeded */
   success: boolean;
+  /** Error message if failed */
   error?: string;
 }
 
 // ============================================
-// VALIDATION & DISPLAY GATING
+// CONFIDENCE THRESHOLDS FOR DISPLAY
 // ============================================
 
-// Confidence thresholds for display (tune these over time)
+/**
+ * Minimum confidence thresholds for displaying optional patterns.
+ * Patterns below these thresholds are filtered out to reduce noise.
+ * 
+ * Tune these values based on user feedback:
+ * - Higher = fewer false positives, may miss some patterns
+ * - Lower = more patterns shown, may include noise
+ */
 export const DISPLAY_THRESHOLDS = {
-  rangeBox: 0.6,   // Show if confidence >= 0.6
-  pivots: 0.6,     // Show if confidence >= 0.6
-  fakeouts: 0.6,   // Show if confidence >= 0.6
+  /** Minimum confidence to show range box */
+  rangeBox: 0.6,
+  /** Minimum confidence to show pivot points */
+  pivots: 0.6,
+  /** Minimum confidence to show fakeouts */
+  fakeouts: 0.6,
 };
 
+/**
+ * Result of validation layer.
+ * Separates what users see from what was detected.
+ */
 export interface ValidatedAnalysis {
-  display: ChartAnalysis;  // What user sees (filtered)
-  logged: ChartAnalysis;   // Full output for debugging
+  /** Filtered analysis for display (low-confidence patterns removed) */
+  display: ChartAnalysis;
+  /** Full analysis for debugging (includes all patterns) */
+  logged: ChartAnalysis;
+  /** What was filtered and why */
   filtered: {
     rangeBox: boolean;
     pivots: boolean;
@@ -138,6 +316,13 @@ export interface ValidatedAnalysis {
   };
 }
 
+/**
+ * Apply confidence-based filtering to analysis results.
+ * Removes patterns that don't meet display thresholds.
+ * 
+ * @param raw - The raw analysis from Gemini
+ * @returns ValidatedAnalysis with filtered display version
+ */
 export function validateAnalysis(raw: ChartAnalysis): ValidatedAnalysis {
   logSubsection("Validation Layer - Display Gating");
   
@@ -151,7 +336,7 @@ export function validateAnalysis(raw: ChartAnalysis): ValidatedAnalysis {
   // Start with full analysis for display
   const display: ChartAnalysis = { ...raw };
   
-  // Gate rangeBox
+  // Gate rangeBox by confidence
   if (raw.rangeBox) {
     if (raw.rangeBox.confidence < DISPLAY_THRESHOLDS.rangeBox) {
       display.rangeBox = undefined;
@@ -162,7 +347,7 @@ export function validateAnalysis(raw: ChartAnalysis): ValidatedAnalysis {
     }
   }
   
-  // Gate pivots
+  // Gate pivots by confidence
   if (raw.pivots) {
     if (raw.pivots.confidence < DISPLAY_THRESHOLDS.pivots) {
       display.pivots = undefined;
@@ -173,7 +358,7 @@ export function validateAnalysis(raw: ChartAnalysis): ValidatedAnalysis {
     }
   }
   
-  // Gate fakeouts
+  // Gate fakeouts by average confidence
   if (raw.fakeouts && raw.fakeouts.length > 0) {
     const avgConfidence = raw.fakeouts.reduce((sum, f) => sum + f.confidence, 0) / raw.fakeouts.length;
     if (avgConfidence < DISPLAY_THRESHOLDS.fakeouts) {
@@ -206,30 +391,63 @@ export function validateAnalysis(raw: ChartAnalysis): ValidatedAnalysis {
 }
 
 // ============================================
-// ANNOTATION PLAN - Zones only, no arrows
+// ANNOTATION TYPES (for canvas rendering)
 // ============================================
 
+/**
+ * A single annotation mark to draw on the chart.
+ * Used by ChartOverlayRenderer for canvas-based fallback.
+ */
 export interface AnnotationMark {
+  /** Type of mark to draw */
   type: "zone" | "line" | "label" | "range_box" | "pivot" | "fakeout";
+  /** Role determines color scheme */
   role: "support" | "resistance" | "current_price" | "range" | "pivot_hh" | "pivot_hl" | "pivot_lh" | "pivot_ll" | "fakeout_above" | "fakeout_below";
+  /** Price level for single-line marks */
   price?: number;
+  /** Upper price for zone/range marks */
   priceHigh?: number;
+  /** Lower price for zone/range marks */
   priceLow?: number;
+  /** Text label to display */
   text?: string;
+  /** Line style */
   style?: "solid" | "dashed";
+  /** Opacity override (0-1) */
   opacity?: number;
 }
 
+/**
+ * Complete annotation plan for canvas rendering.
+ * Generated from ChartAnalysis for use with ChartOverlayRenderer.
+ */
 export interface AnnotationPlan {
+  /** Color theme to use */
   theme: "dark" | "light";
+  /** Short story summary for display */
   story: string;
+  /** Array of marks to draw */
   marks: AnnotationMark[];
 }
 
 // ============================================
-// PROMPT - Layered detection with confidence
+// ANALYSIS PROMPT
 // ============================================
 
+/**
+ * The main prompt sent to Gemini for chart analysis.
+ * 
+ * This prompt is structured in layers:
+ * - Layer 1 (REQUIRED): Story, zones, scenarios, invalidation
+ * - Layer 2 (REQUIRED): Regime classification
+ * - Layer 3 (CONDITIONAL): Range box, pivots, fakeouts
+ * 
+ * Key design decisions:
+ * 1. Story-first approach - explain what happened, not predictions
+ * 2. Read ACTUAL prices from Y-axis, not round numbers
+ * 3. Conditional scenarios ("if X then Y"), not targets
+ * 4. Confidence scores for gating display
+ */
 const CHART_ANALYSIS_PROMPT = `You are a chart reader helping someone understand what a chart is telling them. Your job is NOT to predict prices - it's to explain what has happened and what to watch for next.
 
 === LAYER 1: CORE (REQUIRED) ===
@@ -345,6 +563,17 @@ HARD RULES (DO NOT BREAK):
 // ANNOTATION SYSTEM INSTRUCTION
 // ============================================
 
+/**
+ * System instruction for Gemini 3 Pro Image Preview.
+ * This tells the model how to draw annotations on charts.
+ * 
+ * Key principles:
+ * 1. Draw zones at EXACT prices provided
+ * 2. Semi-transparent so candles show through
+ * 3. Green for support, Red for resistance
+ * 4. Labels near right edge
+ * 5. NO arrows or projections
+ */
 const ANNOTATION_SYSTEM_INSTRUCTION = `You are a professional technical-analysis chart markup artist.
 
 Your job is to edit a candlestick chart by overlaying clean, high-signal annotations that highlight key levels and patterns.
@@ -379,10 +608,36 @@ CRITICAL RULES:
 
 Return a single edited image with the overlays applied.`;
 
-    // ============================================
-// ANALYSIS FUNCTION
-    // ============================================
+// ============================================
+// MAIN ANALYSIS FUNCTION
+// ============================================
 
+/**
+ * Analyze a chart image and extract structured technical analysis.
+ * 
+ * This is the main entry point for chart analysis. It:
+ * 1. Sends the image to Gemini 2.0 Flash
+ * 2. Parses the JSON response
+ * 3. Validates and filters results
+ * 
+ * ## Usage
+ * ```typescript
+ * const imageBase64 = "..."; // Base64-encoded chart image
+ * const analysis = await analyzeChart(imageBase64, "What's happening here?");
+ * 
+ * if (analysis.success) {
+ *   console.log(analysis.story);
+ *   console.log(analysis.keyZones);
+ * }
+ * ```
+ * 
+ * ## Model Used
+ * - gemini-2.0-flash (vision + text)
+ * 
+ * @param imageBase64 - Base64-encoded PNG image of the chart
+ * @param userQuestion - Optional question about the chart
+ * @returns ChartAnalysis with story, zones, scenarios, etc.
+ */
 export async function analyzeChart(
   imageBase64: string,
   userQuestion?: string
@@ -404,18 +659,23 @@ export async function analyzeChart(
     console.log("🤖 Model: gemini-2.0-flash");
     
     const startTime = Date.now();
+    
+    // === GEMINI API CALL ===
+    // This is the core API call structure for chart analysis
     const response = await client.models.generateContent({
       model: "gemini-2.0-flash",
       contents: [
         {
           role: "user",
           parts: [
+            // First part: the image
             {
               inlineData: {
                 mimeType: "image/png",
                 data: imageBase64,
               },
             },
+            // Second part: the prompt with user's question
             { text: CHART_ANALYSIS_PROMPT.replace("{USER_QUESTION}", question) },
           ],
         },
@@ -423,6 +683,7 @@ export async function analyzeChart(
     });
     console.log(`⏱️ API response time: ${Date.now() - startTime}ms`);
 
+    // Extract text from response
     const parts = response.candidates?.[0]?.content?.parts || [];
     let text = "";
     for (const part of parts) {
@@ -434,6 +695,7 @@ export async function analyzeChart(
     console.log("📄 First 500 chars:", text.substring(0, 500));
 
     try {
+      // Parse JSON response (remove any markdown formatting)
       const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
       const parsed = JSON.parse(cleaned);
       
@@ -446,7 +708,7 @@ export async function analyzeChart(
       const currentPrice = parsed.currentPrice || 0;
       
       // ============================================
-      // VALIDATION GATES - Hard rules
+      // VALIDATION PIPELINE
       // ============================================
       
       logSubsection("Key Zones - BEFORE Validation");
@@ -458,7 +720,7 @@ export async function analyzeChart(
       
       let keyZones: KeyZone[] = rawZones.slice(0, 4);
       
-      // Gate 1: Filter impossible values
+      // GATE 1: Filter impossible values (negative, zero, or wildly high)
       logSubsection("Validation Gate 1: Impossible Values");
       const beforeGate1 = keyZones.length;
       keyZones = keyZones.filter(z => {
@@ -475,12 +737,12 @@ export async function analyzeChart(
       });
       console.log(`   Result: ${beforeGate1} → ${keyZones.length} zones`);
       
-      // Gate 2: Proximity Filter - DISABLED
-      // We want to show zones even if price is testing them
+      // GATE 2: Proximity filter - DISABLED
+      // We allow zones close to current price (testing support/resistance)
       logSubsection("Validation Gate 2: Proximity Filter (DISABLED)");
       console.log("   ℹ️ Allowing zones close to current price (testing support/resistance)");
       
-      // Gate 3: Limit to 4 zones
+      // GATE 3: Cap at 4 zones max
       keyZones = keyZones.slice(0, 4);
       
       logSubsection("Key Zones - AFTER Validation");
@@ -493,7 +755,7 @@ export async function analyzeChart(
         console.log("   ⚠️ WARNING: No zones survived validation!");
       }
       
-      // Parse scenarios
+      // Parse and validate scenarios
       logSubsection("Scenarios");
       let scenarios: Scenario[] = (parsed.scenarios || []).slice(0, 2);
       console.log(`📋 Raw scenarios from AI: ${scenarios.length}`);
@@ -506,6 +768,7 @@ export async function analyzeChart(
         implication: s.implication || "...the thesis would need to be re-evaluated",
       }));
       
+      // Ensure exactly 2 scenarios
       while (scenarios.length < 2) {
         scenarios.push({
           condition: "Unable to determine",
@@ -525,11 +788,12 @@ export async function analyzeChart(
       console.log(`🎯 Regime: ${regime.type} (confidence: ${(regime.confidence * 100).toFixed(0)}%)`);
       
       // ============================================
-      // PARSE CONDITIONAL PATTERNS (Layer 3 - gated)
+      // PARSE CONDITIONAL PATTERNS (Layer 3)
+      // These are only populated if detected with high confidence
       // ============================================
       logSubsection("Conditional Patterns (Layer 3)");
       
-      // Range Box
+      // Range Box - only if confidence >= 0.7
       let rangeBox: RangeBox | undefined = undefined;
       if (parsed.rangeBox && parsed.rangeBox.confidence >= 0.7) {
         rangeBox = {
@@ -544,7 +808,7 @@ export async function analyzeChart(
         console.log(`📦 Range Box: Not detected`);
       }
       
-      // Pivots
+      // Pivots - only if confidence >= 0.7
       let pivots: Pivots | undefined = undefined;
       if (parsed.pivots && parsed.pivots.confidence >= 0.7 && parsed.pivots.points?.length > 0) {
         pivots = {
@@ -562,7 +826,7 @@ export async function analyzeChart(
         console.log(`📍 Pivots: Not detected`);
       }
       
-      // Fakeouts
+      // Fakeouts - only if confidence >= 0.7
       let fakeouts: Fakeout[] | undefined = undefined;
       if (parsed.fakeouts && Array.isArray(parsed.fakeouts) && parsed.fakeouts.length > 0) {
         const validFakeouts = parsed.fakeouts.filter((f: Fakeout) => f.confidence >= 0.7);
@@ -581,6 +845,7 @@ export async function analyzeChart(
         console.log(`⚡ Fakeouts: Not detected`);
       }
       
+      // Build final analysis object
       const analysis: ChartAnalysis = {
         story: parsed.story || "Unable to read chart story",
         currentContext: parsed.currentContext || "Current position unclear",
@@ -623,49 +888,36 @@ export async function analyzeChart(
 }
 
 // ============================================
-// BUILD ANNOTATION BRIEF
+// ANNOTATION FUNCTION
 // ============================================
 
-function buildAnnotationBrief(analysis: ChartAnalysis): object {
-  const formatPrice = (p: number): string => {
-    if (p >= 1000) {
-      return `${p} / ${p.toLocaleString()} / ${(p/1000).toFixed(1)}K`;
-    }
-    return `${p} / ${p.toFixed(2)}`;
-  };
-
-  const zones = analysis.keyZones.map(zone => ({
-    role: zone.type,
-    price: zone.price,
-    price_formatted: formatPrice(zone.price),
-    label: zone.label,
-    strength: zone.strength,
-  }));
-
-  return {
-    mode: "zones_only",
-    max_zones: 4,
-    
-    zones,
-    
-    current_price: analysis.currentPrice,
-    current_price_formatted: formatPrice(analysis.currentPrice),
-    
-    rules: [
-      "Draw horizontal zones ONLY",
-      "NO arrows or projections",
-      "NO diagonal lines",
-      "Green for support, red for resistance",
-      "Semi-transparent zones, candles must show through",
-      "Small labels near right edge"
-    ],
-  };
-}
-
-// ============================================
-// ANNOTATION FUNCTION - Zones only
-// ============================================
-
+/**
+ * Annotate a chart image with support/resistance zones.
+ * 
+ * This uses Gemini 3 Pro Image Preview to draw directly on the chart.
+ * It takes the analysis results and creates visual annotations.
+ * 
+ * ## Usage
+ * ```typescript
+ * const analysis = await analyzeChart(imageBase64);
+ * const annotatedImage = await annotateChart(imageBase64, analysis);
+ * 
+ * if (annotatedImage) {
+ *   // Display as: data:image/png;base64,${annotatedImage}
+ * }
+ * ```
+ * 
+ * ## Model Used
+ * - gemini-3-pro-image-preview (image generation)
+ * 
+ * ## Fallback
+ * If this fails, use generateAnnotationPlan() with ChartOverlayRenderer
+ * for canvas-based annotation.
+ * 
+ * @param imageBase64 - Original chart image (base64)
+ * @param analysis - ChartAnalysis from analyzeChart()
+ * @returns Base64-encoded annotated image, or null if failed
+ */
 export async function annotateChart(
   imageBase64: string, 
   analysis: ChartAnalysis
@@ -680,8 +932,8 @@ export async function annotateChart(
 
   logSubsection("Building Annotation Instructions");
   console.log(`📍 Zones to annotate: ${analysis.keyZones.length}`);
-  
-  // Build explicit zone instructions
+    
+  // Build explicit zone instructions for the model
   const zoneInstructions = analysis.keyZones.map(zone => {
     const color = zone.type === "support" ? "GREEN" : "RED";
     const instruction = `- ${color} zone at $${zone.price} (${zone.label})`;
@@ -704,17 +956,22 @@ RANGE BOX TO DRAW:
     console.log(`📦 Range box: $${analysis.rangeBox.low} - $${analysis.rangeBox.high}`);
   }
 
-  // Build pivot instructions if present (future use)
+  // Build pivot instructions if present
   let pivotInstruction = "";
   if (analysis.pivots && analysis.pivots.points.length > 0) {
     pivotInstruction = `
 PIVOT MARKERS TO DRAW:
 ${analysis.pivots.points.map(p => `- ${p.label} at $${p.price}`).join("\n")}
 - Mark each with a DISTINCT hollow circle ⭕ (different from zones) and text label
-- Do NOT draw horizontal lines for pivots, just the marker`;
+- Do NOT draw horizontal lines for pivots, just the marker
+
+OPTIONAL PATTERNS (If clearly visible):
+- If you see a clear Bull/Bear Flag, Wedge, or Channel, draw the trendlines in YELLOW
+- Keep them thin and clean`;
     console.log(`📍 Pivots: ${analysis.pivots.points.length} points`);
   }
 
+  // Build the full user prompt
   const userPrompt = `Add support and resistance zones to this chart.
 
 ZONES TO DRAW (read the Y-axis to place these accurately):
@@ -750,29 +1007,36 @@ ${userPrompt}`;
     console.log("🤖 Model: gemini-3-pro-image-preview");
     
     const startTime = Date.now();
-      const response = await client.models.generateContent({
+    
+    // === GEMINI IMAGE GENERATION API CALL ===
+    // This is the core structure for getting annotated images
+    const response = await client.models.generateContent({
       model: "gemini-3-pro-image-preview",
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                inlineData: {
-                  mimeType: "image/png",
-                  data: imageBase64,
-                },
+      contents: [
+        {
+          role: "user",
+          parts: [
+            // First part: the original chart image
+            {
+              inlineData: {
+                mimeType: "image/png",
+                data: imageBase64,
               },
-              { text: fullPrompt },
-            ],
-          },
-        ],
-        config: {
-          responseModalities: ["TEXT", "IMAGE"],
+            },
+            // Second part: annotation instructions
+            { text: fullPrompt },
+          ],
         },
-      });
+      ],
+      config: {
+        // IMPORTANT: Request both TEXT and IMAGE response modalities
+        responseModalities: ["TEXT", "IMAGE"],
+      },
+    });
     console.log(`⏱️ API response time: ${Date.now() - startTime}ms`);
 
-      const parts = response.candidates?.[0]?.content?.parts || [];
+    // Extract the annotated image from response
+    const parts = response.candidates?.[0]?.content?.parts || [];
     console.log(`📦 Response parts: ${parts.length}`);
     
     for (let i = 0; i < parts.length; i++) {
@@ -784,9 +1048,10 @@ ${userPrompt}`;
         inlineDataSize: part.inlineData?.data ? `${(part.inlineData.data.length / 1024).toFixed(1)} KB` : null,
       });
       
-        if (part.inlineData?.data) {
+      // Return the first image we find
+      if (part.inlineData?.data) {
         console.log(`✅ Successfully got annotated image (${(part.inlineData.data.length / 1024).toFixed(1)} KB)`);
-          return part.inlineData.data;
+        return part.inlineData.data;
       }
     }
     
@@ -796,14 +1061,36 @@ ${userPrompt}`;
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     console.error("❌ Annotation failed:", errorMessage);
-  return null;
-}
+    return null;
+  }
 }
 
 // ============================================
-// GENERATE ANNOTATION PLAN (for canvas rendering)
+// CANVAS FALLBACK: ANNOTATION PLAN
 // ============================================
 
+/**
+ * Generate an annotation plan for canvas-based rendering.
+ * 
+ * Use this when Gemini image generation fails or is unavailable.
+ * The returned plan can be passed to ChartOverlayRenderer component.
+ * 
+ * ## Usage
+ * ```typescript
+ * const analysis = await analyzeChart(imageBase64);
+ * const plan = generateAnnotationPlan(analysis);
+ * 
+ * // In React:
+ * <ChartOverlayRenderer
+ *   imageBase64={imageBase64}
+ *   plan={plan}
+ *   analysis={analysis}
+ * />
+ * ```
+ * 
+ * @param analysis - ChartAnalysis from analyzeChart()
+ * @returns AnnotationPlan for ChartOverlayRenderer
+ */
 export function generateAnnotationPlan(analysis: ChartAnalysis): AnnotationPlan {
   logSubsection("Generating Canvas Annotation Plan");
   
@@ -812,14 +1099,18 @@ export function generateAnnotationPlan(analysis: ChartAnalysis): AnnotationPlan 
   
   console.log(`📍 Creating marks for ${analysis.keyZones.length} zones`);
   
-  // Add zones for each key level
+  // Add zone bands for each key level
   for (const zone of analysis.keyZones) {
-    const bandSize = zone.price * 0.008; // 0.8% band
+    // Create a band around the price (0.8% of price)
+    const bandSize = zone.price * 0.008;
+    
+    // Opacity based on strength
     const opacity = zone.strength === "strong" ? 0.22 : 
                    zone.strength === "moderate" ? 0.16 : 0.10;
     
     console.log(`   Zone: $${zone.price} (${zone.type}) - band: $${(zone.price - bandSize).toFixed(2)} to $${(zone.price + bandSize).toFixed(2)}`);
     
+    // Add the zone band
     marks.push({
       type: "zone",
       role: zone.type,
@@ -828,6 +1119,7 @@ export function generateAnnotationPlan(analysis: ChartAnalysis): AnnotationPlan 
       opacity,
     });
     
+    // Add label for the zone
     marks.push({
       type: "label",
       role: zone.type,
@@ -876,7 +1168,7 @@ export function generateAnnotationPlan(analysis: ChartAnalysis): AnnotationPlan 
     }
   }
   
-  // Add current price marker
+  // Add current price line (dashed)
   if (analysis.currentPrice > 0) {
     console.log(`   Current price line: $${analysis.currentPrice}`);
     marks.push({
@@ -897,9 +1189,16 @@ export function generateAnnotationPlan(analysis: ChartAnalysis): AnnotationPlan 
 }
 
 // ============================================
-// HELPERS
+// HELPER FUNCTIONS
 // ============================================
 
+/**
+ * Create an empty/failed analysis result.
+ * Used when API calls fail or return invalid data.
+ * 
+ * @param error - Error message to include
+ * @returns ChartAnalysis with success: false
+ */
 function createEmptyAnalysis(error?: string): ChartAnalysis {
   console.log(`⚠️ Creating empty analysis with error: ${error}`);
   return {
@@ -919,7 +1218,13 @@ function createEmptyAnalysis(error?: string): ChartAnalysis {
   };
 }
 
-// Legacy exports for backward compatibility
+// ============================================
+// LEGACY EXPORTS (backward compatibility)
+// ============================================
+
+/**
+ * @deprecated Use analyzeChart instead
+ */
 export async function analyzeChartStructured(
   imageBase64: string,
   userPrompt?: string
@@ -927,6 +1232,5 @@ export async function analyzeChartStructured(
   return analyzeChart(imageBase64, userPrompt);
 }
 
-// Type alias for any code still expecting old name
+/** @deprecated Use ChartAnalysis instead */
 export type PatternAnalysis = ChartAnalysis;
-// trigger rebuild Wed Dec 17 16:01:23 EST 2025
